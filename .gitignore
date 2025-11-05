@@ -1,0 +1,32 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.env
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+*.env
+
+# MySQL data (if mounted locally)
+mysql-data/
+
+# Build / output directories
+dist/
+build/
+
+# Optional editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
