@@ -9,7 +9,7 @@ services:
       MYSQL_USER: iseeanoob
       MYSQL_PASSWORD: pass
     ports:
-      - "3306:3306"
+      - "3307:3307"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:

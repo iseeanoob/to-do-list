@@ -69,6 +69,7 @@
         const li = document.createElement("li");
         li.textContent = todo.title;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
+        li.style.fontSize = "20px";
 
         // Toggle complete
         li.addEventListener("click", async () => {
@@ -91,6 +92,7 @@
         const delBtn = document.createElement("button");
         delBtn.textContent = "🗑️";
         delBtn.style.marginLeft = "10px";
+        delBtn.style.width = "50px";
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
