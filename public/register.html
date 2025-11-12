@@ -13,6 +13,7 @@
       <input type="text" id="username" placeholder="Username" required />
       <input type="email" id="email" placeholder="Email" required />
       <input type="password" id="password" placeholder="Password" required />
+      <input type="text" id="secret" placeholder="Superadmin Secret (optional)" />
       <button type="submit">Create Account</button>
     </form>
 
@@ -30,6 +31,7 @@
       const username = document.getElementById("username").value.trim();
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value.trim();
+      const secret = document.getElementById("secret").value.trim();
 
       if (!username || !email || !password) {
         errorMsg.textContent = "Please fill in all fields.";
@@ -37,10 +39,19 @@
       }
 
       try {
-        const res = await fetch("http://localhost:3000/register", {
+        let url = "http://localhost:3000/register";
+        let body = { username, email, password };
+
+        // If secret is provided, hit the superadmin route
+        if (secret) {
+          url = "http://localhost:3000/create-superadmin";
+          body.secret = secret;
+        }
+
+        const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, email, password }),
+          body: JSON.stringify(body),
         });
 
         const data = await res.json();
@@ -50,12 +61,21 @@
           return;
         }
 
-        // Auto-login after registration
-        localStorage.setItem("token", data.token || ""); // token might not exist yet
-        localStorage.setItem("user", JSON.stringify({ id: data.id, username: data.username, email: data.email }));
+        alert(`✅ ${secret ? "Superadmin" : "Account"} created!`);
 
-        alert("✅ Account created! You will now be redirected to your todos.");
-        window.location.href = "todos.html";
+        // Auto-login after registration
+        if (!secret) {
+          localStorage.setItem("token", data.token || "");
+          localStorage.setItem(
+            "user",
+            JSON.stringify({ id: data.user.id, username: data.user.username, email: data.user.email })
+          );
+          window.location.href = "todos.html";
+        } else {
+          // Superadmin created, redirect to login
+          window.location.href = "login.html";
+        }
+
       } catch (err) {
         console.error(err);
         errorMsg.textContent = "Server error. Try again later.";
