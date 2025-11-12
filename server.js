@@ -218,7 +218,8 @@ const ROLES = {
             id: u.id,
             username: u.username,
             email: u.email,
-            role: ROLES[u.role],
+            role: u.role,
+            roleName: ROLES[u.role],
             totalTodos: todos.length,
             completed: todos.filter((t) => t.completed).length,
             todos,
@@ -232,10 +233,11 @@ const ROLES = {
     }
   });
 
-  // 🔺 Promote/Demote
+  // 🔺 Promote/Demote (Option 1 logic)
   app.put("/admin/role/:id", requireRank(4), async (req, res) => {
     const { id } = req.params;
     const { newRole } = req.body;
+
     if (!newRole || newRole < 1 || newRole > 5)
       return res.status(400).json({ error: "Invalid role value (1-5)." });
 
@@ -244,12 +246,15 @@ const ROLES = {
       if (rows.length === 0) return res.status(404).json({ error: "User not found." });
 
       const targetRole = rows[0].role;
-      if (targetRole >= req.user.role && req.user.role < 5)
-        return res.status(403).json({ error: "Cannot modify equal or higher rank." });
+
+      // Option 1: allow promotion/demotion up to one rank below your own role
+      if (newRole >= req.user.role && req.user.role < 5)
+        return res.status(403).json({ error: "Cannot promote to equal or higher than your own rank." });
 
       await pool.query("UPDATE users SET role = ? WHERE id = ?", [newRole, id]);
       res.json({ message: `User role updated to ${ROLES[newRole]}.` });
-    } catch {
+    } catch (err) {
+      console.error(err);
       res.status(500).json({ error: "Error updating user role." });
     }
   });
