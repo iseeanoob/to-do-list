@@ -104,7 +104,7 @@ function canAssignTodo(assignerRole, targetRole) {
 
 const adminRateLimit = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again later." },
@@ -223,7 +223,7 @@ const adminRateLimit = rateLimit({
   });
 
   // 🧑‍💼 Admin panel: users + todos
-  app.get("/admin/users-todos", requireRank(4), adminRateLimit, async (req, res) => {
+  app.get("/admin/users-todos", adminRateLimit, requireRank(4), async (req, res) => {
     try {
       const [rows] = await pool.query(
         `SELECT
@@ -278,7 +278,7 @@ const adminRateLimit = rateLimit({
   });
 
   // 📝 Assign todo to a user (admin/superadmin)
-  app.post("/admin/users/:id/todos", requireRank(4), adminRateLimit, async (req, res) => {
+  app.post("/admin/users/:id/todos", adminRateLimit, requireRank(4), async (req, res) => {
     const { id } = req.params;
     const title = (req.body?.title || "").trim();
     if (!title) return res.status(400).json({ error: "Title required." });
@@ -308,7 +308,7 @@ const adminRateLimit = rateLimit({
   });
 
   // 🔺 Promote/Demote (Option 1 logic)
-  app.put("/admin/role/:id", requireRank(4), adminRateLimit, async (req, res) => {
+  app.put("/admin/role/:id", adminRateLimit, requireRank(4), async (req, res) => {
     const { id } = req.params;
     const { newRole } = req.body;
 
@@ -334,7 +334,7 @@ const adminRateLimit = rateLimit({
   });
 
   // ❌ Delete user
-  app.delete("/admin/users/:id", requireRank(4), adminRateLimit, async (req, res) => {
+  app.delete("/admin/users/:id", adminRateLimit, requireRank(4), async (req, res) => {
     const { id } = req.params;
     try {
       const [rows] = await pool.query("SELECT role FROM users WHERE id = ?", [id]);

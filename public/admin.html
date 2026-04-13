@@ -103,7 +103,7 @@
       users.forEach(user => {
         const userRoleNum = Number(user.role); // ensure numeric
         const todosHTML = user.todos.length
-          ? `<ul class="todo-list">${user.todos.map(todo => `<li class="${todo.completed ? 'completed' : ''}">${escapeHtml(todo.title)}</li>`).join('')}</ul>`
+          ? `<ul class="todo-list">${user.todos.map(todo => `<li class="${Boolean(todo.completed) ? 'completed' : ''}">${escapeHtml(todo.title)}</li>`).join('')}</ul>`
           : "<em>No todos</em>";
 
         let actionsHTML = "";
