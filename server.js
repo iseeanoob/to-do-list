@@ -3,6 +3,7 @@ const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(bodyParser.json());
@@ -87,30 +88,6 @@ function requireRank(minRank) {
   };
 }
 
-function createRateLimiter({ windowMs, max }) {
-  const hits = new Map();
-
-  return (req, res, next) => {
-    const key = req.user?.id ? `user:${req.user.id}` : `ip:${req.ip}`;
-    const now = Date.now();
-    const existing = hits.get(key);
-
-    if (!existing || now - existing.windowStart >= windowMs) {
-      hits.set(key, { windowStart: now, count: 1 });
-      return next();
-    }
-
-    existing.count += 1;
-    if (existing.count > max) {
-      const retryAfter = Math.ceil((windowMs - (now - existing.windowStart)) / 1000);
-      res.set("Retry-After", String(retryAfter));
-      return res.status(429).json({ error: "Too many requests. Please try again later." });
-    }
-
-    return next();
-  };
-}
-
 const ROLES = {
   1: "user",
   2: "moderator",
@@ -120,11 +97,18 @@ const ROLES = {
 };
 
 function canAssignTodo(assignerRole, targetRole) {
-  if (assignerRole < 4) return false;
-  return targetRole < 5;
+  if (assignerRole === 5) return targetRole < 5;
+  if (assignerRole === 4) return targetRole <= 4;
+  return false;
 }
 
-const adminRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120 });
+const adminRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
 
 (async () => {
   pool = await connectWithRetry();

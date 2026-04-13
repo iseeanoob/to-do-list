@@ -84,7 +84,7 @@
 
   function canAssignTodo(myRole, userRole) {
     if (myRole === 5) return userRole < 5;
-    if (myRole === 4) return userRole < 5;
+    if (myRole === 4) return userRole <= 4;
     return false;
   }
 
