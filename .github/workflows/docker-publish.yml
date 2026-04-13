@@ -26,7 +26,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
-            --file Dockerfile.dev \
+            --file Dockerfile \
             --tag node-docker-dev \
             --cache-from node-docker-dev \
             .
