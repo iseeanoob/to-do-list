@@ -3,6 +3,7 @@ const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(bodyParser.json());
@@ -94,6 +95,20 @@ const ROLES = {
   4: "admin",
   5: "superadmin",
 };
+
+function canAssignTodo(assignerRole, targetRole) {
+  if (assignerRole === 5) return targetRole < 5;
+  if (assignerRole === 4) return targetRole <= 4;
+  return false;
+}
+
+const adminRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
 
 (async () => {
   pool = await connectWithRetry();
@@ -208,33 +223,92 @@ const ROLES = {
   });
 
   // 🧑‍💼 Admin panel: users + todos
-  app.get("/admin/users-todos", requireRank(4), async (req, res) => {
+  app.get("/admin/users-todos", adminRateLimit, requireRank(4), async (req, res) => {
     try {
-      const [users] = await pool.query("SELECT id, username, email, role FROM users");
-      const data = await Promise.all(
-        users.map(async (u) => {
-          const [todos] = await pool.query("SELECT * FROM todos WHERE user_id = ?", [u.id]);
-          return {
-            id: u.id,
-            username: u.username,
-            email: u.email,
-            role: u.role,
-            roleName: ROLES[u.role],
-            totalTodos: todos.length,
-            completed: todos.filter((t) => t.completed).length,
-            todos,
-          };
-        })
+      const [rows] = await pool.query(
+        `SELECT
+          u.id AS user_id,
+          u.username,
+          u.email,
+          u.role,
+          t.id AS todo_id,
+          t.title AS todo_title,
+          t.completed AS todo_completed,
+          t.created_at AS todo_created_at
+        FROM users u
+        LEFT JOIN todos t ON t.user_id = u.id
+        ORDER BY u.id ASC, t.created_at DESC`
       );
-      res.json(data);
+
+      const userMap = new Map();
+      for (const row of rows) {
+        if (!userMap.has(row.user_id)) {
+          userMap.set(row.user_id, {
+            id: row.user_id,
+            username: row.username,
+            email: row.email,
+            role: row.role,
+            roleName: ROLES[row.role],
+            totalTodos: 0,
+            completed: 0,
+            todos: [],
+          });
+        }
+
+        if (row.todo_id) {
+          const user = userMap.get(row.user_id);
+          const todo = {
+            id: row.todo_id,
+            user_id: row.user_id,
+            title: row.todo_title,
+            completed: !!row.todo_completed,
+            created_at: row.todo_created_at,
+          };
+          user.todos.push(todo);
+          user.totalTodos += 1;
+          if (todo.completed) user.completed += 1;
+        }
+      }
+
+      res.json(Array.from(userMap.values()));
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Error fetching admin data." });
     }
   });
 
+  // 📝 Assign todo to a user (admin/superadmin)
+  app.post("/admin/users/:id/todos", adminRateLimit, requireRank(4), async (req, res) => {
+    const { id } = req.params;
+    const title = (req.body?.title || "").trim();
+    if (!title) return res.status(400).json({ error: "Title required." });
+
+    try {
+      const [rows] = await pool.query("SELECT id, role FROM users WHERE id = ?", [id]);
+      if (rows.length === 0) return res.status(404).json({ error: "User not found." });
+
+      const target = rows[0];
+      if (!canAssignTodo(req.user.role, target.role)) {
+        return res.status(403).json({ error: "Not allowed to assign todo to this role." });
+      }
+
+      const [result] = await pool.query(
+        "INSERT INTO todos (user_id, title) VALUES (?, ?)",
+        [target.id, title]
+      );
+
+      res.json({
+        message: "Todo assigned successfully.",
+        todo: { id: result.insertId, user_id: target.id, title, completed: false },
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error assigning todo." });
+    }
+  });
+
   // 🔺 Promote/Demote (Option 1 logic)
-  app.put("/admin/role/:id", requireRank(4), async (req, res) => {
+  app.put("/admin/role/:id", adminRateLimit, requireRank(4), async (req, res) => {
     const { id } = req.params;
     const { newRole } = req.body;
 
@@ -260,7 +334,7 @@ const ROLES = {
   });
 
   // ❌ Delete user
-  app.delete("/admin/users/:id", requireRank(4), async (req, res) => {
+  app.delete("/admin/users/:id", adminRateLimit, requireRank(4), async (req, res) => {
     const { id } = req.params;
     try {
       const [rows] = await pool.query("SELECT role FROM users WHERE id = ?", [id]);
@@ -303,7 +377,3 @@ const ROLES = {
     console.log(`🚀 Server running on http://localhost:${PORT}`)
   );
 })();
-
-
-
-mjao
