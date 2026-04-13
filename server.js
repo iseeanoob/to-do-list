@@ -87,6 +87,30 @@ function requireRank(minRank) {
   };
 }
 
+function createRateLimiter({ windowMs, max }) {
+  const hits = new Map();
+
+  return (req, res, next) => {
+    const key = req.user?.id ? `user:${req.user.id}` : `ip:${req.ip}`;
+    const now = Date.now();
+    const existing = hits.get(key);
+
+    if (!existing || now - existing.windowStart >= windowMs) {
+      hits.set(key, { windowStart: now, count: 1 });
+      return next();
+    }
+
+    existing.count += 1;
+    if (existing.count > max) {
+      const retryAfter = Math.ceil((windowMs - (now - existing.windowStart)) / 1000);
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json({ error: "Too many requests. Please try again later." });
+    }
+
+    return next();
+  };
+}
+
 const ROLES = {
   1: "user",
   2: "moderator",
@@ -96,10 +120,11 @@ const ROLES = {
 };
 
 function canAssignTodo(assignerRole, targetRole) {
-  if (assignerRole === 5) return targetRole < 5;
-  if (assignerRole === 4) return targetRole < 5;
-  return false;
+  if (assignerRole < 4) return false;
+  return targetRole < 5;
 }
+
+const adminRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120 });
 
 (async () => {
   pool = await connectWithRetry();
@@ -214,7 +239,7 @@ function canAssignTodo(assignerRole, targetRole) {
   });
 
   // 🧑‍💼 Admin panel: users + todos
-  app.get("/admin/users-todos", requireRank(4), async (req, res) => {
+  app.get("/admin/users-todos", requireRank(4), adminRateLimit, async (req, res) => {
     try {
       const [rows] = await pool.query(
         `SELECT
@@ -269,7 +294,7 @@ function canAssignTodo(assignerRole, targetRole) {
   });
 
   // 📝 Assign todo to a user (admin/superadmin)
-  app.post("/admin/users/:id/todos", requireRank(4), async (req, res) => {
+  app.post("/admin/users/:id/todos", requireRank(4), adminRateLimit, async (req, res) => {
     const { id } = req.params;
     const title = (req.body?.title || "").trim();
     if (!title) return res.status(400).json({ error: "Title required." });
@@ -299,7 +324,7 @@ function canAssignTodo(assignerRole, targetRole) {
   });
 
   // 🔺 Promote/Demote (Option 1 logic)
-  app.put("/admin/role/:id", requireRank(4), async (req, res) => {
+  app.put("/admin/role/:id", requireRank(4), adminRateLimit, async (req, res) => {
     const { id } = req.params;
     const { newRole } = req.body;
 
@@ -325,7 +350,7 @@ function canAssignTodo(assignerRole, targetRole) {
   });
 
   // ❌ Delete user
-  app.delete("/admin/users/:id", requireRank(4), async (req, res) => {
+  app.delete("/admin/users/:id", requireRank(4), adminRateLimit, async (req, res) => {
     const { id } = req.params;
     try {
       const [rows] = await pool.query("SELECT role FROM users WHERE id = ?", [id]);

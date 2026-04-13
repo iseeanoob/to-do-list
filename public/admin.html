@@ -79,7 +79,7 @@
   }
 
   function canManageUser(myRole, userRole) {
-    return myRole >= 4 && (myRole > userRole || myRole === 5);
+    return myRole >= 4 && myRole > userRole;
   }
 
   function canAssignTodo(myRole, userRole) {
