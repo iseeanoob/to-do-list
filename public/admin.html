@@ -25,14 +25,28 @@
     </thead>
     <tbody id="usersTable"></tbody>
   </table>
+  <h2>📬 Todo Requests</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Requested By</th>
+        <th>Request</th>
+        <th>Status</th>
+        <th>Distribute</th>
+      </tr>
+    </thead>
+    <tbody id="todoRequestsTable"></tbody>
+  </table>
 </div>
 
 <script>
   const token = localStorage.getItem("token");
   const usersTable = document.getElementById("usersTable");
   const adminInfo = document.getElementById("adminInfo");
+  const todoRequestsTable = document.getElementById("todoRequestsTable");
   const backToTodosBtn = document.getElementById("backToTodosBtn");
   const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+  const TODO_REQUESTS_COLUMN_COUNT = 4;
 
   if (!token) window.location.href = "login.html";
   backToTodosBtn.addEventListener("click", () => {
@@ -62,12 +76,16 @@
 
   async function fetchUsersTodos() {
     try {
-      const res = await fetch("/admin/users-todos", { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error("Not authorized or failed to fetch data.");
-
-      const users = await res.json();
       const decoded = JSON.parse(atob(token.split('.')[1]));
       const myRole = Number(decoded.role);
+      const [usersRes, requestsRes] = await Promise.all([
+        fetch("/admin/users-todos", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/admin/todo-requests", { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      if (!usersRes.ok || !requestsRes.ok) throw new Error("Not authorized or failed to fetch data.");
+
+      const users = await usersRes.json();
+      const todoRequests = await requestsRes.json();
 
       adminInfo.textContent = `Logged in as: ${decoded.username} (Role: ${ROLES[myRole]} — Level ${myRole})`;
 
@@ -122,11 +140,51 @@
           </tr>
         `;
       });
+
+      renderTodoRequests(todoRequests, users, myRole);
     } catch (err) {
       console.error(err);
       alert("Error fetching admin data. Logging out.");
       localStorage.removeItem("token");
       window.location.href = "login.html";
+    }
+  }
+
+  function renderTodoRequests(todoRequests, users, myRole) {
+    todoRequestsTable.innerHTML = "";
+    todoRequests.forEach((request) => {
+      const requestId = Number(request.id);
+      const requesterRole = Number(request.requested_by_role || 1);
+      const canDistributeTo = users.filter((user) => canAssignTodo(myRole, Number(user.role)));
+      const distributeEnabled = request.status === "pending";
+      const targetSelectHtml = canDistributeTo.length
+        ? `<select id="requestTargetUser-${requestId}">
+             ${canDistributeTo.map((user) => `<option value="${user.id}">${escapeHtml(user.username)} (role ${user.role})</option>`).join("")}
+           </select>`
+        : "<em>No eligible users</em>";
+      const difficultySelectHtml = `
+        <select id="requestDifficulty-${requestId}">
+          ${TODO_DIFFICULTIES.map((difficulty) => `<option value="${difficulty}" ${difficulty === (request.difficulty || "easy") ? "selected" : ""}>${difficulty}</option>`).join("")}
+        </select>
+      `;
+      const distributeButtonHtml = distributeEnabled && canDistributeTo.length
+        ? `<button class="action assign" data-action="distribute-request" data-request-id="${requestId}">Distribute</button>`
+        : "<em>Handled</em>";
+      const statusText = request.status === "distributed"
+        ? `distributed${request.distributed_todo_id ? ` (todo #${request.distributed_todo_id})` : ""}`
+        : "pending";
+
+      todoRequestsTable.innerHTML += `
+        <tr>
+          <td>${escapeHtml(request.requested_by_username)} (role ${requesterRole})</td>
+          <td>${escapeHtml(request.title)} <small>(${escapeHtml(request.difficulty || "easy")})</small></td>
+          <td>${escapeHtml(statusText)}</td>
+          <td>${targetSelectHtml} ${difficultySelectHtml} ${distributeButtonHtml}</td>
+        </tr>
+      `;
+    });
+    if (todoRequests.length === 0) {
+      todoRequestsTable.innerHTML = `<tr><td colspan="${TODO_REQUESTS_COLUMN_COUNT}"><em>No requests</em></td></tr>`;
     }
   }
 
@@ -198,11 +256,41 @@
     }
   }
 
+  async function distributeTodoRequest(requestId) {
+    const targetInput = document.getElementById(`requestTargetUser-${requestId}`);
+    const difficultyInput = document.getElementById(`requestDifficulty-${requestId}`);
+    const targetUserId = Number(targetInput?.value);
+    const difficulty = String(difficultyInput?.value || "").trim().toLowerCase();
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) return alert("Please select a valid target user.");
+    if (!TODO_DIFFICULTIES.includes(difficulty)) return alert("Please choose a valid difficulty.");
+    if (!confirm("Distribute this todo request?")) return;
+    try {
+      const res = await fetch(`/admin/todo-requests/${requestId}/distribute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ targetUserId, difficulty })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to distribute todo request.");
+      alert(data.message || "Todo request distributed.");
+      fetchUsersTodos();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   usersTable.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button || button.disabled) return;
 
     const action = button.dataset.action;
+    if (action === "approve-todo") {
+      const todoId = Number(button.dataset.todoId);
+      if (!Number.isInteger(todoId) || todoId <= 0) return;
+      approveTodo(todoId);
+      return;
+    }
+
     const userId = Number(button.dataset.userId);
     if (!Number.isInteger(userId) || userId <= 0) return;
 
@@ -220,18 +308,21 @@
       assignTodo(userId);
       return;
     }
-    if (action === "approve-todo") {
-      const todoId = Number(button.dataset.todoId);
-      if (!Number.isInteger(todoId) || todoId <= 0) return;
-      approveTodo(todoId);
-      return;
-    }
-
     console.warn("Unknown admin action encountered:", {
       action,
       userId,
       dataset: { ...button.dataset },
     });
+  });
+
+  todoRequestsTable.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button || button.disabled) return;
+    const action = button.dataset.action;
+    if (action !== "distribute-request") return;
+    const requestId = Number(button.dataset.requestId);
+    if (!Number.isInteger(requestId) || requestId <= 0) return;
+    distributeTodoRequest(requestId);
   });
 
   fetchUsersTodos();
