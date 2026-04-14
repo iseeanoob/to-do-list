@@ -4,42 +4,8 @@
   <meta charset="UTF-8">
   <title>Admin Panel | Node Docker App</title>
   <link rel="stylesheet" href="style.css">
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; background: #f3f6fb; color: #1f2937; }
-    .container { max-width: 1200px; margin: 24px auto; background: #fff; padding: 24px; border-radius: 14px; box-shadow: 0 10px 24px rgba(0,0,0,0.08); }
-    h1 { margin-top: 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
-    th, td { border: 1px solid #dbe2ef; padding: 10px; text-align: left; vertical-align: top; }
-    th { background-color: #eef3ff; }
-    .completed { text-decoration: line-through; color: #6b7280; }
-    .todo-list { margin: 0; padding-left: 18px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    button.action, .assign-btn {
-      margin: 0;
-      padding: 7px 10px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      color: white;
-      font-size: 12px;
-    }
-    button.action:disabled, .assign-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .promote { background-color: #2e7d32; }
-    .demote { background-color: #f57c00; }
-    .delete { background-color: #d32f2f; }
-    .assign-wrap { display: flex; gap: 6px; align-items: center; }
-    .assign-input {
-      width: 180px;
-      padding: 7px 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-    .assign-btn { background: #2563eb; }
-    #logoutBtn { margin-top: 20px; background: #111827; color: white; padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; }
-  </style>
 </head>
-<body>
+<body class="admin-page">
 <div class="container">
   <h1>🛠 Admin Panel</h1>
   <p id="adminInfo"></p>
@@ -83,7 +49,7 @@
   }
 
   function canAssignTodo(myRole, userRole) {
-    if (myRole === 5) return userRole < 5;
+    if (myRole === 5) return userRole <= 5;
     if (myRole === 4) return userRole <= 4;
     return false;
   }
