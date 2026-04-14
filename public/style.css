@@ -3,6 +3,7 @@
   --bg-end: #f8fafc;
   --surface: #ffffff;
   --surface-soft: #f8fafc;
+  --surface-muted: #f1f5f9;
   --text-primary: #0f172a;
   --text-muted: #475569;
   --border: #dbe2ef;
@@ -28,6 +29,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 1.5;
 }
 
 .xp-progress-wrap {
@@ -74,6 +76,7 @@ body {
   padding: 28px;
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.14);
   text-align: center;
+  border: 1px solid var(--border);
 }
 
 h1 {
@@ -83,9 +86,12 @@ h1 {
 
 p {
   color: var(--text-muted);
+  margin: 8px 0 16px;
 }
 
-input {
+input,
+select,
+textarea {
   width: 100%;
   padding: 11px 12px;
   margin: 7px 0;
@@ -93,9 +99,12 @@ input {
   border-radius: 8px;
   font-size: 15px;
   background: var(--surface-soft);
+  color: var(--text-primary);
 }
 
-input:focus {
+input:focus,
+select:focus,
+textarea:focus {
   border-color: var(--primary);
   outline: 2px solid rgba(37, 99, 235, 0.2);
 }
@@ -202,6 +211,105 @@ a:hover {
   text-decoration: none;
 }
 
+/* Todos page */
+body.todos-page {
+  align-items: flex-start;
+}
+
+.todos-page .container {
+  width: min(100%, 860px);
+  text-align: left;
+  margin-top: 16px;
+}
+
+.todos-page h1 {
+  margin-bottom: 6px;
+}
+
+#todoForm,
+#todoRequestForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 18px;
+}
+
+#todoForm input,
+#todoRequestForm input,
+#todoForm select,
+#todoRequestForm select {
+  margin: 0;
+}
+
+#todoForm button,
+#todoRequestForm button,
+#adminNavWrap button,
+#todoListUnfinished button,
+#todoListPendingApproval button,
+#todoListFinished button {
+  width: auto;
+  margin: 0;
+}
+
+body.todos-page #adminNavWrap {
+  margin: 10px 0 18px;
+}
+
+#todoListUnfinished,
+#todoListPendingApproval,
+#todoListFinished,
+#todoRequestList {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 20px;
+}
+
+#todoListUnfinished li,
+#todoListPendingApproval li,
+#todoListFinished li,
+#todoRequestList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  margin-bottom: 8px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+#todoListFinished li {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+#todoListUnfinished li button,
+#todoListPendingApproval li button,
+#todoListFinished li button {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+#todoListUnfinished li select,
+#todoListPendingApproval li select,
+#todoListFinished li select {
+  width: auto;
+  margin: 0;
+  min-width: 110px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.todos-page h3 {
+  margin: 20px 0 6px;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
 /* Admin page */
 body.admin-page {
   align-items: flex-start;
@@ -229,6 +337,9 @@ body.admin-page {
   margin-top: 16px;
   font-size: 14px;
   background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
 }
 
 .admin-page th,
@@ -240,6 +351,8 @@ body.admin-page {
 
 .admin-page th {
   background: #eef3ff;
+  color: #1e3a8a;
+  font-weight: 700;
 }
 
 .completed {
@@ -289,6 +402,7 @@ button.action:disabled,
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .assign-input {
@@ -380,4 +494,20 @@ button.action:disabled,
 
 .profile-logout-btn {
   background: var(--danger);
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 16px;
+    padding-top: 84px;
+  }
+
+  .container {
+    padding: 20px;
+  }
+
+  #todoForm,
+  #todoRequestForm {
+    grid-template-columns: 1fr;
+  }
 }

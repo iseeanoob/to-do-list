@@ -5,7 +5,7 @@
   <title>My Todos | Node Docker App</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="todos-page">
   <div class="xp-progress-wrap">
     <div class="xp-progress-meta">
       <strong id="levelLabel">Level 1</strong>
@@ -29,7 +29,7 @@
       </select>
       <button type="submit">Add Todo</button>
     </form>
-    <div id="adminNavWrap" style="display: none; margin-top: 10px;">
+    <div id="adminNavWrap" style="display: none;">
       <button type="button" id="goToAdminBtn">Go to Admin Panel</button>
     </div>
 
@@ -187,7 +187,6 @@
             : "Open";
         li.textContent = `${todo.title} (${difficulty}, ${assignedByText}, ${statusText})`;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
-        li.style.fontSize = "20px";
 
         // Toggle complete
         li.addEventListener("click", async () => {
@@ -222,8 +221,6 @@
         // Delete button
         const delBtn = document.createElement("button");
         delBtn.textContent = "🗑️";
-        delBtn.style.marginLeft = "10px";
-        delBtn.style.width = "50px";
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
@@ -249,13 +246,11 @@
             if (difficultyOption === difficulty) option.selected = true;
             difficultySelect.appendChild(option);
           });
-          difficultySelect.style.marginLeft = "10px";
           difficultySelect.addEventListener("click", (event) => event.stopPropagation());
 
           const saveDifficultyBtn = document.createElement("button");
           saveDifficultyBtn.type = "button";
           saveDifficultyBtn.textContent = "Save difficulty";
-          saveDifficultyBtn.style.marginLeft = "8px";
           saveDifficultyBtn.addEventListener("click", async (event) => {
             event.stopPropagation();
             const selectedDifficulty = (difficultySelect.value || "").trim().toLowerCase();
