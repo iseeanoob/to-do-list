@@ -24,6 +24,20 @@ const DB_CONFIG = {
 
 let pool;
 
+async function ensureColumn(conn, tableName, columnName, columnDefinition) {
+  const [existing] = await conn.query(
+    `SELECT 1
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
+     LIMIT 1`,
+    [DB_CONFIG.database, tableName, columnName]
+  );
+
+  if (existing.length === 0) {
+    await conn.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+  }
+}
+
 // 🧠 Connect to MySQL with retry logic
 async function connectWithRetry(retries = 10, delay = 5000) {
   for (let i = 1; i <= retries; i++) {
@@ -56,29 +70,9 @@ async function connectWithRetry(retries = 10, delay = 5000) {
         )
       `);
 
-      try {
-        await conn.query(
-          "ALTER TABLE users ADD COLUMN profile_picture_url VARCHAR(2048) DEFAULT NULL"
-        );
-      } catch (err) {
-        if (err.code !== "ER_DUP_FIELDNAME") throw err;
-      }
-
-      try {
-        await conn.query(
-          "ALTER TABLE todos ADD COLUMN assigned_by_user_id INT DEFAULT NULL"
-        );
-      } catch (err) {
-        if (err.code !== "ER_DUP_FIELDNAME") throw err;
-      }
-
-      try {
-        await conn.query(
-          "ALTER TABLE todos ADD COLUMN assigned_by_role INT DEFAULT NULL"
-        );
-      } catch (err) {
-        if (err.code !== "ER_DUP_FIELDNAME") throw err;
-      }
+      await ensureColumn(conn, "users", "profile_picture_url", "VARCHAR(2048) DEFAULT NULL");
+      await ensureColumn(conn, "todos", "assigned_by_user_id", "INT DEFAULT NULL");
+      await ensureColumn(conn, "todos", "assigned_by_role", "INT DEFAULT NULL");
 
       conn.release();
       console.log("✅ Tables ready");
@@ -132,6 +126,14 @@ function canAssignTodo(assignerRole, targetRole) {
 const adminRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
+
+const userRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again later." },
@@ -235,7 +237,7 @@ const adminRateLimit = rateLimit({
   });
 
   // 👤 Current user profile
-  app.get("/me", authenticateToken, async (req, res) => {
+  app.get("/me", userRateLimit, authenticateToken, async (req, res) => {
     try {
       const [rows] = await pool.query(
         "SELECT id, username, email, role, profile_picture_url FROM users WHERE id = ? LIMIT 1",
@@ -258,14 +260,29 @@ const adminRateLimit = rateLimit({
   });
 
   // 🖼️ Update profile picture URL
-  app.put("/me/profile-picture", authenticateToken, async (req, res) => {
+  app.put("/me/profile-picture", userRateLimit, authenticateToken, async (req, res) => {
     const rawUrl = typeof req.body?.profilePictureUrl === "string" ? req.body.profilePictureUrl.trim() : "";
     const isEmpty = rawUrl.length === 0;
-    const isValidUrl =
-      /^https?:\/\/\S+$/i.test(rawUrl) ||
-      /^data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+$/.test(rawUrl);
+    const isDataUrl = /^data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+$/.test(rawUrl);
+    let isValidUrl = false;
 
-    if (!isEmpty && !isValidUrl) {
+    if (isEmpty) {
+      isValidUrl = true;
+    } else if (isDataUrl) {
+      if (rawUrl.length > 100000) {
+        return res.status(400).json({ error: "Data URL image is too large." });
+      }
+      isValidUrl = true;
+    } else {
+      try {
+        const parsed = new URL(rawUrl);
+        isValidUrl = parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        isValidUrl = false;
+      }
+    }
+
+    if (!isValidUrl) {
       return res.status(400).json({ error: "Provide a valid image URL or data URL." });
     }
     if (rawUrl.length > 2048) {
