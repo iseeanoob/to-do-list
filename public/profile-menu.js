@@ -1,6 +1,7 @@
 (() => {
   const token = localStorage.getItem("token");
   const roleNames = { 1: "User", 2: "Moderator", 3: "Manager", 4: "Admin", 5: "Superadmin" };
+  const MAX_UPLOAD_BYTES = 1024 * 1024;
 
   function parseJwt(rawToken) {
     try {
@@ -55,6 +56,8 @@
             profile.profilePictureUrl || ""
           )}" />
           <button type="button" id="saveProfilePictureBtn">Save picture</button>
+          <input id="profilePictureFileInput" type="file" accept="image/*" />
+          <button type="button" id="uploadProfilePictureBtn">Upload picture</button>
           <button type="button" id="logoutFromProfileBtn" class="profile-logout-btn">Logout</button>
         `
             : `
@@ -75,6 +78,8 @@
 
     if (token) {
       const saveBtn = document.getElementById("saveProfilePictureBtn");
+      const uploadBtn = document.getElementById("uploadProfilePictureBtn");
+      const fileInput = document.getElementById("profilePictureFileInput");
       const logoutBtn = document.getElementById("logoutFromProfileBtn");
 
       logoutBtn.addEventListener("click", () => {
@@ -101,6 +106,46 @@
           render();
         } catch (err) {
           alert(err.message || "Failed to save picture.");
+        }
+      });
+
+      uploadBtn.addEventListener("click", async () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          alert("Choose an image first.");
+          return;
+        }
+        if (!file.type.startsWith("image/")) {
+          alert("Only image files are allowed.");
+          return;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+          alert("Image must be 1MB or smaller.");
+          return;
+        }
+
+        try {
+          const profilePictureUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+            reader.onerror = () => reject(new Error("Failed to read image file."));
+            reader.readAsDataURL(file);
+          });
+
+          const res = await fetch("/me/profile-picture", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ profilePictureUrl }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to upload picture.");
+          profile.profilePictureUrl = data.profilePictureUrl || "";
+          render();
+        } catch (err) {
+          alert(err.message || "Failed to upload picture.");
         }
       });
     }
