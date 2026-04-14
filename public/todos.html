@@ -6,6 +6,15 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="xp-progress-wrap">
+    <div class="xp-progress-meta">
+      <strong id="levelLabel">Level 1</strong>
+      <span id="xpLabel">0 / 10 XP</span>
+    </div>
+    <div class="xp-progress-track">
+      <div class="xp-progress-fill" id="xpProgressFill"></div>
+    </div>
+  </div>
   <div class="container">
     <h1>📝 My Todos</h1>
     <p>Click a todo to toggle completion, or use the icon to remove it.</p>
@@ -38,6 +47,9 @@
     const errorMsg = document.getElementById("errorMsg");
     const adminNavWrap = document.getElementById("adminNavWrap");
     const goToAdminBtn = document.getElementById("goToAdminBtn");
+    const levelLabel = document.getElementById("levelLabel");
+    const xpLabel = document.getElementById("xpLabel");
+    const xpProgressFill = document.getElementById("xpProgressFill");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const SUPERADMIN_ROLE_LEVEL = 5;
 
@@ -62,6 +74,29 @@
       });
     }
 
+    function renderProgress(profile) {
+      const level = Math.max(1, Number(profile?.level) || 1);
+      const currentXp = Math.max(0, Number(profile?.xp) || 0);
+      const nextLevelXp = Math.max(10, Number(profile?.nextLevelXp) || 10);
+      const percent = Math.min(100, Math.round((currentXp / nextLevelXp) * 100));
+      levelLabel.textContent = `Level ${level}`;
+      xpLabel.textContent = `${currentXp} / ${nextLevelXp} XP`;
+      xpProgressFill.style.width = `${percent}%`;
+    }
+
+    async function fetchProgress() {
+      try {
+        const res = await fetch("/me", {
+          headers: { Authorization: "Bearer " + token }
+        });
+        if (!res.ok) return;
+        const profile = await res.json();
+        renderProgress(profile);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     async function fetchTodos() {
       try {
         const res = await fetch("/todos", {
@@ -69,6 +104,7 @@
         });
         const todos = await res.json();
         renderTodos(todos);
+        fetchProgress();
       } catch (err) {
         console.error(err);
         errorMsg.textContent = "Failed to load todos.";
@@ -85,9 +121,11 @@
       function renderItem(todo, targetList) {
         const li = document.createElement("li");
         const assignedByAdmin = Number(todo.assigned_by_role) >= MIN_ADMIN_ROLE_LEVEL;
-        li.textContent = assignedByAdmin
-          ? `${todo.title} (Assigned by ${Number(todo.assigned_by_role) === SUPERADMIN_ROLE_LEVEL ? "Superadmin" : "Admin"})`
-          : todo.title;
+        const assignedByText = assignedByAdmin
+          ? `Assigned by ${Number(todo.assigned_by_role) === SUPERADMIN_ROLE_LEVEL ? "Superadmin" : "Admin"}`
+          : "Self";
+        const difficulty = String(todo.difficulty || "easy");
+        li.textContent = `${todo.title} (${difficulty}, ${assignedByText})`;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
         li.style.fontSize = "20px";
 
