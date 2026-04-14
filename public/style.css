@@ -10,6 +10,7 @@
   --primary-hover: #1d4ed8;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
+  --profile-avatar-size: 54px;
 }
 
 * {
@@ -262,8 +263,8 @@ button.action:disabled,
 }
 
 .profile-trigger {
-  width: 54px;
-  height: 54px;
+  width: var(--profile-avatar-size);
+  height: var(--profile-avatar-size);
   border-radius: 999px;
   border: 2px solid #fff;
   padding: 0;

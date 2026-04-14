@@ -33,6 +33,8 @@
     const todoForm = document.getElementById("todoForm");
     const todoInput = document.getElementById("todoInput");
     const errorMsg = document.getElementById("errorMsg");
+    const MIN_ADMIN_ROLE_LEVEL = 4;
+    const SUPERADMIN_ROLE_LEVEL = 5;
 
     // Decode token to get username/email
     function parseJwt(token) {
@@ -71,9 +73,9 @@
 
       function renderItem(todo, targetList) {
         const li = document.createElement("li");
-        const assignedByAdmin = Number(todo.assigned_by_role) >= 4;
+        const assignedByAdmin = Number(todo.assigned_by_role) >= MIN_ADMIN_ROLE_LEVEL;
         li.textContent = assignedByAdmin
-          ? `${todo.title} (Assigned by ${Number(todo.assigned_by_role) === 5 ? "Superadmin" : "Admin"})`
+          ? `${todo.title} (Assigned by ${Number(todo.assigned_by_role) === SUPERADMIN_ROLE_LEVEL ? "Superadmin" : "Admin"})`
           : todo.title;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
         li.style.fontSize = "20px";

@@ -11,6 +11,8 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+const MAX_DATA_URL_LENGTH = 100000;
+const MAX_PROFILE_URL_LENGTH = 2048;
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || "db",
@@ -284,12 +286,12 @@ const userRateLimit = rateLimit({
     if (isEmpty) {
       isValidUrl = true;
     } else if (isDataUrlCandidate) {
-      if (rawUrl.length > 100000) {
+      if (rawUrl.length > MAX_DATA_URL_LENGTH) {
         return res.status(400).json({ error: "Data URL image is too large." });
       }
       isValidUrl = /^data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+$/.test(rawUrl);
     } else {
-      if (rawUrl.length > 2048) {
+      if (rawUrl.length > MAX_PROFILE_URL_LENGTH) {
         return res.status(400).json({ error: "Profile picture URL is too long." });
       }
       try {
