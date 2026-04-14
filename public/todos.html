@@ -21,6 +21,12 @@
 
     <form id="todoForm">
       <input type="text" id="todoInput" placeholder="New todo..." required />
+      <select id="todoDifficultyInput">
+        <option value="easy">easy</option>
+        <option value="medium">medium</option>
+        <option value="hard">hard</option>
+        <option value="insane">insane</option>
+      </select>
       <button type="submit">Add Todo</button>
     </form>
     <div id="adminNavWrap" style="display: none; margin-top: 10px;">
@@ -33,6 +39,18 @@
     <ul id="todoListPendingApproval"></ul>
     <h3>Finished</h3>
     <ul id="todoListFinished"></ul>
+    <h3>Todo Requests (for admins to distribute)</h3>
+    <form id="todoRequestForm">
+      <input type="text" id="todoRequestInput" placeholder="Request a todo..." required />
+      <select id="todoRequestDifficultyInput">
+        <option value="easy">easy</option>
+        <option value="medium">medium</option>
+        <option value="hard">hard</option>
+        <option value="insane">insane</option>
+      </select>
+      <button type="submit">Send Request</button>
+    </form>
+    <ul id="todoRequestList"></ul>
     <p id="errorMsg" class="error"></p>
   </div>
 
@@ -47,6 +65,11 @@
     const todoListFinished = document.getElementById("todoListFinished");
     const todoForm = document.getElementById("todoForm");
     const todoInput = document.getElementById("todoInput");
+    const todoDifficultyInput = document.getElementById("todoDifficultyInput");
+    const todoRequestForm = document.getElementById("todoRequestForm");
+    const todoRequestInput = document.getElementById("todoRequestInput");
+    const todoRequestDifficultyInput = document.getElementById("todoRequestDifficultyInput");
+    const todoRequestList = document.getElementById("todoRequestList");
     const errorMsg = document.getElementById("errorMsg");
     const adminNavWrap = document.getElementById("adminNavWrap");
     const goToAdminBtn = document.getElementById("goToAdminBtn");
@@ -55,6 +78,7 @@
     const xpProgressFill = document.getElementById("xpProgressFill");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const SUPERADMIN_ROLE_LEVEL = 5;
+    const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
 
     // Decode token to get username/email
     function parseJwt(token) {
@@ -111,6 +135,33 @@
         console.error(err);
         errorMsg.textContent = "Failed to load todos.";
       }
+    }
+
+    async function fetchTodoRequests() {
+      try {
+        const res = await fetch("/todo-requests", {
+          headers: { Authorization: "Bearer " + token }
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          errorMsg.textContent = errData.error || "Failed to load todo requests.";
+          return;
+        }
+        const requests = await res.json();
+        renderTodoRequests(requests);
+      } catch (err) {
+        console.error(err);
+        errorMsg.textContent = "Failed to load todo requests.";
+      }
+    }
+
+    function renderTodoRequests(requests) {
+      todoRequestList.innerHTML = "";
+      requests.forEach((request) => {
+        const li = document.createElement("li");
+        li.textContent = `${request.title} (${request.difficulty || "easy"}, ${request.status || "pending"})`;
+        todoRequestList.appendChild(li);
+      });
     }
 
     function renderTodos(todos) {
@@ -187,6 +238,55 @@
         });
 
         li.appendChild(delBtn);
+
+        const canChangeDifficulty = !assignedByAdmin && !todo.completed && !todo.completion_requested;
+        if (canChangeDifficulty) {
+          const difficultySelect = document.createElement("select");
+          TODO_DIFFICULTIES.forEach((difficultyOption) => {
+            const option = document.createElement("option");
+            option.value = difficultyOption;
+            option.textContent = difficultyOption;
+            if (difficultyOption === difficulty) option.selected = true;
+            difficultySelect.appendChild(option);
+          });
+          difficultySelect.style.marginLeft = "10px";
+          difficultySelect.addEventListener("click", (event) => event.stopPropagation());
+
+          const saveDifficultyBtn = document.createElement("button");
+          saveDifficultyBtn.type = "button";
+          saveDifficultyBtn.textContent = "Save difficulty";
+          saveDifficultyBtn.style.marginLeft = "8px";
+          saveDifficultyBtn.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            const selectedDifficulty = (difficultySelect.value || "").trim().toLowerCase();
+            if (!TODO_DIFFICULTIES.includes(selectedDifficulty)) {
+              errorMsg.textContent = "Choose a valid difficulty.";
+              return;
+            }
+            try {
+              const res = await fetch(`/todos/${todo.id}`, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + token
+                },
+                body: JSON.stringify({ difficulty: selectedDifficulty })
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                errorMsg.textContent = data.error || "Failed to update difficulty.";
+                return;
+              }
+              fetchTodos();
+            } catch (err) {
+              console.error(err);
+              errorMsg.textContent = "Failed to update difficulty.";
+            }
+          });
+
+          li.appendChild(difficultySelect);
+          li.appendChild(saveDifficultyBtn);
+        }
         targetList.appendChild(li);
       }
 
@@ -199,7 +299,12 @@
     todoForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const title = todoInput.value.trim();
+      const difficulty = (todoDifficultyInput?.value || "").trim().toLowerCase();
       if (!title) return;
+      if (!TODO_DIFFICULTIES.includes(difficulty)) {
+        errorMsg.textContent = "Please choose a valid difficulty.";
+        return;
+      }
 
       try {
         await fetch("/todos", {
@@ -208,9 +313,10 @@
             "Content-Type": "application/json",
             Authorization: "Bearer " + token
           },
-          body: JSON.stringify({ title })
+          body: JSON.stringify({ title, difficulty })
         });
         todoInput.value = "";
+        todoDifficultyInput.value = "easy";
         fetchTodos();
       } catch (err) {
         console.error(err);
@@ -218,9 +324,43 @@
       }
     });
 
+    todoRequestForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = todoRequestInput.value.trim();
+      const difficulty = (todoRequestDifficultyInput?.value || "").trim().toLowerCase();
+      if (!title) return;
+      if (!TODO_DIFFICULTIES.includes(difficulty)) {
+        errorMsg.textContent = "Please choose a valid request difficulty.";
+        return;
+      }
+
+      try {
+        const res = await fetch("/todo-requests", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + token
+          },
+          body: JSON.stringify({ title, difficulty })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          errorMsg.textContent = data.error || "Failed to send todo request.";
+          return;
+        }
+        todoRequestInput.value = "";
+        todoRequestDifficultyInput.value = "easy";
+        fetchTodoRequests();
+      } catch (err) {
+        console.error(err);
+        errorMsg.textContent = "Failed to send todo request.";
+      }
+    });
+
     // Initial fetch
     fetchProgress();
     fetchTodos();
+    fetchTodoRequests();
   </script>
   <script src="profile-menu.js"></script>
 </body>

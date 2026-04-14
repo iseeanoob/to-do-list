@@ -63,6 +63,21 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS todo_requests (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          requested_by_user_id INT NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy',
+          status ENUM('pending', 'distributed') NOT NULL DEFAULT 'pending',
+          distributed_to_user_id INT DEFAULT NULL,
+          distributed_todo_id INT DEFAULT NULL,
+          handled_by_user_id INT DEFAULT NULL,
+          handled_at TIMESTAMP NULL DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
 
       const [usersProfilePictureColumn] = await conn.query(
         `SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
@@ -157,6 +172,70 @@ async function connectWithRetry(retries = 10, delay = 5000) {
       );
       if (usersLevelColumn.length === 0) {
         await conn.query("ALTER TABLE users ADD COLUMN level INT NOT NULL DEFAULT 1");
+      }
+      const [todoRequestsDifficultyColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'difficulty'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsDifficultyColumn.length === 0) {
+        await conn.query(
+          "ALTER TABLE todo_requests ADD COLUMN difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy'"
+        );
+      }
+      const [todoRequestsStatusColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'status'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsStatusColumn.length === 0) {
+        await conn.query(
+          "ALTER TABLE todo_requests ADD COLUMN status ENUM('pending', 'distributed') NOT NULL DEFAULT 'pending'"
+        );
+      }
+      const [todoRequestsDistributedToUserColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'distributed_to_user_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsDistributedToUserColumn.length === 0) {
+        await conn.query("ALTER TABLE todo_requests ADD COLUMN distributed_to_user_id INT DEFAULT NULL");
+      }
+      const [todoRequestsDistributedTodoColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'distributed_todo_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsDistributedTodoColumn.length === 0) {
+        await conn.query("ALTER TABLE todo_requests ADD COLUMN distributed_todo_id INT DEFAULT NULL");
+      }
+      const [todoRequestsHandledByColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'handled_by_user_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsHandledByColumn.length === 0) {
+        await conn.query("ALTER TABLE todo_requests ADD COLUMN handled_by_user_id INT DEFAULT NULL");
+      }
+      const [todoRequestsHandledAtColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todo_requests' AND COLUMN_NAME = 'handled_at'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todoRequestsHandledAtColumn.length === 0) {
+        await conn.query("ALTER TABLE todo_requests ADD COLUMN handled_at TIMESTAMP NULL DEFAULT NULL");
       }
 
       conn.release();
@@ -423,13 +502,15 @@ const userRateLimit = rateLimit({
   // ➕ Add todo
   app.post("/todos", authenticateToken, async (req, res) => {
     const { title } = req.body;
+    const difficulty = normalizeDifficulty(req.body?.difficulty);
     if (!title) return res.status(400).json({ error: "Title required." });
+    if (!difficulty) return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
     try {
       const [result] = await pool.query(
         "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
-        [req.user.id, title, "easy", req.user.id, req.user.role]
+        [req.user.id, title, difficulty, req.user.id, req.user.role]
       );
-      res.json({ id: result.insertId, title, completed: false, completion_requested: false, difficulty: "easy" });
+       res.json({ id: result.insertId, title, completed: false, completion_requested: false, difficulty });
     } catch {
       res.status(500).json({ error: "Error adding todo." });
     }
@@ -441,15 +522,20 @@ const userRateLimit = rateLimit({
     const hasTitle = typeof req.body?.title === "string";
     const title = hasTitle ? req.body.title.trim() : "";
     const hasCompleted = typeof req.body?.completed === "boolean";
+    const hasDifficulty = typeof req.body?.difficulty === "string";
+    const difficulty = hasDifficulty ? normalizeDifficulty(req.body?.difficulty) : null;
 
     if (!Number.isInteger(todoId) || todoId <= 0) {
       return res.status(400).json({ error: "Invalid todo id." });
     }
-    if (!hasTitle && !hasCompleted) {
-      return res.status(400).json({ error: "Provide title and/or completed status." });
+    if (!hasTitle && !hasCompleted && !hasDifficulty) {
+      return res.status(400).json({ error: "Provide title, completed status, and/or difficulty." });
     }
     if (hasTitle && !title) {
       return res.status(400).json({ error: "Title cannot be empty." });
+    }
+    if (hasDifficulty && !difficulty) {
+      return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
     }
 
     try {
@@ -458,7 +544,18 @@ const userRateLimit = rateLimit({
         await conn.beginTransaction();
 
         const [todoRows] = await conn.query(
-          "SELECT id, completed, completion_requested, difficulty, xp_awarded FROM todos WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
+          `SELECT
+             id,
+             completed,
+             completion_requested,
+             difficulty,
+             xp_awarded,
+             assigned_by_user_id,
+             assigned_by_role
+           FROM todos
+           WHERE id = ? AND user_id = ?
+           LIMIT 1
+           FOR UPDATE`,
           [todoId, req.user.id]
         );
         if (todoRows.length === 0) {
@@ -482,6 +579,20 @@ const userRateLimit = rateLimit({
             setClauses.push("completed = FALSE");
             setClauses.push("completion_requested = FALSE");
           }
+        }
+        if (hasDifficulty) {
+          const assignedByAdmin = Number(todo.assigned_by_role) >= 4;
+          const isSelfAssigned = Number(todo.assigned_by_user_id) === Number(req.user.id) && !assignedByAdmin;
+          if (!isSelfAssigned) {
+            await conn.rollback();
+            return res.status(403).json({ error: "You can only change difficulty for self-assigned todos." });
+          }
+          if (Boolean(todo.completed) || Boolean(todo.completion_requested)) {
+            await conn.rollback();
+            return res.status(400).json({ error: "Cannot change difficulty after completion is requested or approved." });
+          }
+          setClauses.push("difficulty = ?");
+          params.push(difficulty);
         }
 
         if (setClauses.length === 0) {
@@ -538,6 +649,59 @@ const userRateLimit = rateLimit({
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Error deleting todo." });
+    }
+  });
+
+  app.get("/todo-requests", userRateLimit, authenticateToken, async (req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           id,
+           requested_by_user_id,
+           title,
+           difficulty,
+           status,
+           distributed_to_user_id,
+           distributed_todo_id,
+           handled_by_user_id,
+           handled_at,
+           created_at
+         FROM todo_requests
+         WHERE requested_by_user_id = ?
+         ORDER BY created_at DESC`,
+        [req.user.id]
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error fetching todo requests." });
+    }
+  });
+
+  app.post("/todo-requests", userRateLimit, authenticateToken, async (req, res) => {
+    const title = String(req.body?.title || "").trim();
+    const difficulty = normalizeDifficulty(req.body?.difficulty);
+    if (!title) return res.status(400).json({ error: "Title required." });
+    if (!difficulty) return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
+
+    try {
+      const [result] = await pool.query(
+        "INSERT INTO todo_requests (requested_by_user_id, title, difficulty) VALUES (?, ?, ?)",
+        [req.user.id, title, difficulty]
+      );
+      res.json({
+        message: "Todo request sent to admins.",
+        request: {
+          id: result.insertId,
+          requested_by_user_id: req.user.id,
+          title,
+          difficulty,
+          status: "pending",
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error creating todo request." });
     }
   });
 
@@ -640,6 +804,126 @@ const userRateLimit = rateLimit({
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Error assigning todo." });
+    }
+  });
+
+  app.get("/admin/todo-requests", adminRateLimit, requireRank(4), async (req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           tr.id,
+           tr.requested_by_user_id,
+           requester.username AS requested_by_username,
+           requester.role AS requested_by_role,
+           tr.title,
+           tr.difficulty,
+           tr.status,
+           tr.distributed_to_user_id,
+           tr.distributed_todo_id,
+           tr.handled_by_user_id,
+           tr.handled_at,
+           tr.created_at
+         FROM todo_requests tr
+         INNER JOIN users requester ON requester.id = tr.requested_by_user_id
+         ORDER BY tr.created_at DESC`
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error fetching todo requests." });
+    }
+  });
+
+  app.post("/admin/todo-requests/:id/distribute", adminRateLimit, requireRank(4), async (req, res) => {
+    const requestId = Number.parseInt(req.params.id, 10);
+    const targetUserId = Number.parseInt(req.body?.targetUserId, 10);
+    const overrideTitle = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const difficulty = normalizeDifficulty(req.body?.difficulty);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ error: "Invalid request id." });
+    }
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: "Invalid target user id." });
+    }
+    if (!difficulty) return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
+
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        const [requestRows] = await conn.query(
+          `SELECT id, title, status
+           FROM todo_requests
+           WHERE id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [requestId]
+        );
+        if (requestRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Todo request not found." });
+        }
+        const todoRequest = requestRows[0];
+        if (todoRequest.status !== "pending") {
+          await conn.rollback();
+          return res.status(400).json({ error: "Todo request has already been handled." });
+        }
+
+        const [targetRows] = await conn.query(
+          "SELECT id, role FROM users WHERE id = ? LIMIT 1",
+          [targetUserId]
+        );
+        if (targetRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Target user not found." });
+        }
+        const target = targetRows[0];
+        if (!canAssignTodo(req.user.role, target.role)) {
+          await conn.rollback();
+          return res.status(403).json({ error: "Not allowed to distribute to this role." });
+        }
+
+        const todoTitle = overrideTitle || todoRequest.title;
+        if (!todoTitle) {
+          await conn.rollback();
+          return res.status(400).json({ error: "Title required." });
+        }
+
+        const [todoResult] = await conn.query(
+          "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
+          [target.id, todoTitle, difficulty, req.user.id, req.user.role]
+        );
+        await conn.query(
+          `UPDATE todo_requests
+           SET status = 'distributed',
+               distributed_to_user_id = ?,
+               distributed_todo_id = ?,
+               handled_by_user_id = ?,
+               handled_at = NOW()
+           WHERE id = ?`,
+          [target.id, todoResult.insertId, req.user.id, requestId]
+        );
+
+        await conn.commit();
+        return res.json({
+          message: "Todo request distributed successfully.",
+          todo: {
+            id: todoResult.insertId,
+            user_id: target.id,
+            title: todoTitle,
+            difficulty,
+          },
+        });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error distributing todo request." });
     }
   });
 
