@@ -252,8 +252,8 @@ body.todos-page {
   margin: 0;
 }
 
-#adminNavWrap {
-  margin: 10px 0 18px !important;
+body.todos-page #adminNavWrap {
+  margin: 10px 0 18px;
 }
 
 #todoListUnfinished,
