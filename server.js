@@ -54,6 +54,7 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           user_id INT NOT NULL,
           title VARCHAR(255) NOT NULL,
           completed BOOLEAN DEFAULT FALSE,
+          completion_requested BOOLEAN NOT NULL DEFAULT FALSE,
           difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy',
           xp_awarded BOOLEAN NOT NULL DEFAULT FALSE,
           assigned_by_user_id INT DEFAULT NULL,
@@ -123,6 +124,17 @@ async function connectWithRetry(retries = 10, delay = 5000) {
       );
       if (todosXpAwardedColumn.length === 0) {
         await conn.query("ALTER TABLE todos ADD COLUMN xp_awarded BOOLEAN NOT NULL DEFAULT FALSE");
+      }
+
+      const [todosCompletionRequestedColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'completion_requested'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosCompletionRequestedColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN completion_requested BOOLEAN NOT NULL DEFAULT FALSE");
       }
 
       const [usersXpColumn] = await conn.query(
@@ -331,7 +343,7 @@ const userRateLimit = rateLimit({
   app.get("/todos", authenticateToken, async (req, res) => {
     try {
       const [rows] = await pool.query(
-        "SELECT id, user_id, title, completed, difficulty, assigned_by_user_id, assigned_by_role, created_at FROM todos WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, user_id, title, completed, completion_requested, difficulty, assigned_by_user_id, assigned_by_role, created_at FROM todos WHERE user_id = ? ORDER BY created_at DESC",
         [req.user.id]
       );
       res.json(rows);
@@ -417,7 +429,7 @@ const userRateLimit = rateLimit({
         "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
         [req.user.id, title, "easy", req.user.id, req.user.role]
       );
-      res.json({ id: result.insertId, title, completed: false, difficulty: "easy" });
+      res.json({ id: result.insertId, title, completed: false, completion_requested: false, difficulty: "easy" });
     } catch {
       res.status(500).json({ error: "Error adding todo." });
     }
@@ -446,7 +458,7 @@ const userRateLimit = rateLimit({
         await conn.beginTransaction();
 
         const [todoRows] = await conn.query(
-          "SELECT id, completed, difficulty, xp_awarded FROM todos WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
+          "SELECT id, completed, completion_requested, difficulty, xp_awarded FROM todos WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
           [todoId, req.user.id]
         );
         if (todoRows.length === 0) {
@@ -462,17 +474,22 @@ const userRateLimit = rateLimit({
           params.push(title);
         }
         if (hasCompleted) {
-          setClauses.push("completed = ?");
-          params.push(req.body.completed);
+          if (req.body.completed === true) {
+            if (!Boolean(todo.completed)) {
+              setClauses.push("completion_requested = TRUE");
+            }
+          } else {
+            setClauses.push("completed = FALSE");
+            setClauses.push("completion_requested = FALSE");
+          }
         }
 
-        const shouldAwardXp =
-          hasCompleted &&
-          req.body.completed === true &&
-          !Boolean(todo.completed) &&
-          !Boolean(todo.xp_awarded);
-        if (shouldAwardXp) {
-          setClauses.push("xp_awarded = TRUE");
+        if (setClauses.length === 0) {
+          await conn.commit();
+          return res.json({
+            message: "Todo unchanged.",
+            xpGained: 0,
+          });
         }
 
         params.push(todoId, req.user.id);
@@ -485,33 +502,10 @@ const userRateLimit = rateLimit({
           return res.status(404).json({ error: "Todo not found." });
         }
 
-        let progression = null;
-        let xpGained = 0;
-        if (shouldAwardXp) {
-          xpGained = TODO_DIFFICULTY_XP[todo.difficulty];
-          const [userRows] = await conn.query(
-            "SELECT xp, level FROM users WHERE id = ? LIMIT 1 FOR UPDATE",
-            [req.user.id]
-          );
-          if (userRows.length === 0) {
-            await conn.rollback();
-            return res.status(404).json({ error: "User not found." });
-          }
-          progression = applyXpProgression(userRows[0].xp, userRows[0].level, xpGained);
-          await conn.query("UPDATE users SET xp = ?, level = ? WHERE id = ?", [
-            progression.xp,
-            progression.level,
-            req.user.id,
-          ]);
-        }
-
         await conn.commit();
         return res.json({
           message: "Todo updated.",
-          xpGained,
-          xp: progression ? progression.xp : undefined,
-          level: progression ? progression.level : undefined,
-          nextLevelXp: progression ? getRequiredXpForLevel(progression.level) : undefined,
+          xpGained: 0,
         });
       } catch (err) {
         await conn.rollback();
@@ -559,6 +553,7 @@ const userRateLimit = rateLimit({
           t.id AS todo_id,
           t.title AS todo_title,
           t.completed AS todo_completed,
+          t.completion_requested AS todo_completion_requested,
           t.difficulty AS todo_difficulty,
           t.assigned_by_role AS assigned_by_role,
           t.created_at AS todo_created_at
@@ -578,6 +573,7 @@ const userRateLimit = rateLimit({
             roleName: ROLES[row.role],
             totalTodos: 0,
             completed: 0,
+            pendingApproval: 0,
             todos: [],
           });
         }
@@ -589,6 +585,7 @@ const userRateLimit = rateLimit({
             user_id: row.user_id,
             title: row.todo_title,
             completed: !!row.todo_completed,
+            completion_requested: !!row.todo_completion_requested,
             difficulty: row.todo_difficulty || "easy",
             assigned_by_role: row.assigned_by_role,
             created_at: row.todo_created_at,
@@ -596,6 +593,7 @@ const userRateLimit = rateLimit({
           user.todos.push(todo);
           user.totalTodos += 1;
           if (todo.completed) user.completed += 1;
+          if (todo.completion_requested) user.pendingApproval += 1;
         }
       }
 
@@ -630,11 +628,109 @@ const userRateLimit = rateLimit({
 
       res.json({
         message: "Todo assigned successfully.",
-        todo: { id: result.insertId, user_id: target.id, title, completed: false, difficulty },
+        todo: {
+          id: result.insertId,
+          user_id: target.id,
+          title,
+          completed: false,
+          completion_requested: false,
+          difficulty,
+        },
       });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Error assigning todo." });
+    }
+  });
+
+  // ✅ Approve pending todo completion (admin/superadmin)
+  app.put("/admin/todos/:id/approve", adminRateLimit, requireRank(4), async (req, res) => {
+    const todoId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(todoId) || todoId <= 0) {
+      return res.status(400).json({ error: "Invalid todo id." });
+    }
+
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        const [todoRows] = await conn.query(
+          `SELECT
+             t.id,
+             t.user_id,
+             t.completed,
+             t.completion_requested,
+             t.difficulty,
+             t.xp_awarded,
+             u.role AS user_role,
+             u.xp AS user_xp,
+             u.level AS user_level
+           FROM todos t
+           INNER JOIN users u ON u.id = t.user_id
+           WHERE t.id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [todoId]
+        );
+        if (todoRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Todo not found." });
+        }
+
+        const todo = todoRows[0];
+        if (!canAssignTodo(req.user.role, todo.user_role)) {
+          await conn.rollback();
+          return res.status(403).json({ error: "Not allowed to approve this user's todo." });
+        }
+        if (Boolean(todo.completed)) {
+          await conn.rollback();
+          return res.json({ message: "Todo is already approved as completed.", xpGained: 0 });
+        }
+        if (!Boolean(todo.completion_requested)) {
+          await conn.rollback();
+          return res.status(400).json({ error: "Todo completion has not been requested yet." });
+        }
+
+        const shouldAwardXp = !Boolean(todo.xp_awarded);
+        await conn.query(
+          `UPDATE todos
+           SET completed = TRUE,
+               completion_requested = FALSE,
+               xp_awarded = CASE WHEN xp_awarded = TRUE THEN TRUE ELSE ? END
+           WHERE id = ?`,
+          [shouldAwardXp, todoId]
+        );
+
+        let progression = null;
+        let xpGained = 0;
+        if (shouldAwardXp) {
+          xpGained = TODO_DIFFICULTY_XP[todo.difficulty];
+          progression = applyXpProgression(todo.user_xp, todo.user_level, xpGained);
+          await conn.query("UPDATE users SET xp = ?, level = ? WHERE id = ?", [
+            progression.xp,
+            progression.level,
+            todo.user_id,
+          ]);
+        }
+
+        await conn.commit();
+        return res.json({
+          message: "Todo completion approved.",
+          xpGained,
+          xp: progression ? progression.xp : undefined,
+          level: progression ? progression.level : undefined,
+          nextLevelXp: progression ? getRequiredXpForLevel(progression.level) : undefined,
+        });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error approving todo completion." });
     }
   });
 

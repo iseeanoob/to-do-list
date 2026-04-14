@@ -75,7 +75,15 @@
       users.forEach(user => {
         const userRoleNum = Number(user.role); // ensure numeric
         const todosHTML = user.todos.length
-          ? `<ul class="todo-list">${user.todos.map(todo => `<li class="${Boolean(todo.completed) ? 'completed' : ''}">${escapeHtml(todo.title)} <small>(${escapeHtml(todo.difficulty || "easy")})</small></li>`).join('')}</ul>`
+          ? `<ul class="todo-list">${user.todos.map((todo) => {
+              const isCompleted = Boolean(todo.completed);
+              const isPendingApproval = !isCompleted && Boolean(todo.completion_requested);
+              const statusText = isCompleted ? "approved" : (isPendingApproval ? "awaiting approval" : "open");
+              const approveButton = (isPendingApproval && canAssignTodo(myRole, userRoleNum))
+                ? ` <button class="action approve" data-action="approve-todo" data-todo-id="${todo.id}">✅ Approve</button>`
+                : "";
+              return `<li class="${isCompleted ? 'completed' : ''}">${escapeHtml(todo.title)} <small>(${escapeHtml(todo.difficulty || "easy")}, ${statusText})</small>${approveButton}</li>`;
+            }).join('')}</ul>`
           : "<em>No todos</em>";
 
         let actionsHTML = "";
@@ -174,6 +182,22 @@
     }
   }
 
+  async function approveTodo(todoId) {
+    if (!confirm("Approve this todo as completed?")) return;
+    try {
+      const res = await fetch(`/admin/todos/${todoId}/approve`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to approve todo.");
+      alert(data.message || "Todo approved.");
+      fetchUsersTodos();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   usersTable.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button || button.disabled) return;
@@ -194,6 +218,12 @@
     }
     if (action === "assign") {
       assignTodo(userId);
+      return;
+    }
+    if (action === "approve-todo") {
+      const todoId = Number(button.dataset.todoId);
+      if (!Number.isInteger(todoId) || todoId <= 0) return;
+      approveTodo(todoId);
       return;
     }
 

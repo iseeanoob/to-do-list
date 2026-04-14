@@ -17,7 +17,7 @@
   </div>
   <div class="container">
     <h1>📝 My Todos</h1>
-    <p>Click a todo to toggle completion, or use the icon to remove it.</p>
+    <p>Click a todo to request completion, or use the icon to remove it.</p>
 
     <form id="todoForm">
       <input type="text" id="todoInput" placeholder="New todo..." required />
@@ -29,6 +29,8 @@
 
     <h3>Unfinished</h3>
     <ul id="todoListUnfinished"></ul>
+    <h3>Awaiting Approval</h3>
+    <ul id="todoListPendingApproval"></ul>
     <h3>Finished</h3>
     <ul id="todoListFinished"></ul>
     <p id="errorMsg" class="error"></p>
@@ -41,6 +43,7 @@
     }
 
     const todoListUnfinished = document.getElementById("todoListUnfinished");
+    const todoListPendingApproval = document.getElementById("todoListPendingApproval");
     const todoListFinished = document.getElementById("todoListFinished");
     const todoForm = document.getElementById("todoForm");
     const todoInput = document.getElementById("todoInput");
@@ -112,9 +115,11 @@
 
     function renderTodos(todos) {
       todoListUnfinished.innerHTML = "";
+      todoListPendingApproval.innerHTML = "";
       todoListFinished.innerHTML = "";
 
-      const unfinished = todos.filter((todo) => !todo.completed);
+      const unfinished = todos.filter((todo) => !todo.completed && !todo.completion_requested);
+      const pendingApproval = todos.filter((todo) => !todo.completed && Boolean(todo.completion_requested));
       const finished = todos.filter((todo) => Boolean(todo.completed));
 
       function renderItem(todo, targetList) {
@@ -124,12 +129,18 @@
           ? `Assigned by ${Number(todo.assigned_by_role) === SUPERADMIN_ROLE_LEVEL ? "Superadmin" : "Admin"}`
           : "Self";
         const difficulty = String(todo.difficulty || "easy");
-        li.textContent = `${todo.title} (${difficulty}, ${assignedByText})`;
+        const statusText = todo.completed
+          ? "Approved"
+          : todo.completion_requested
+            ? "Awaiting approval"
+            : "Open";
+        li.textContent = `${todo.title} (${difficulty}, ${assignedByText}, ${statusText})`;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
         li.style.fontSize = "20px";
 
         // Toggle complete
         li.addEventListener("click", async () => {
+          const desiredCompleted = !todo.completed && !todo.completion_requested;
           try {
             const updateRes = await fetch(`/todos/${todo.id}`, {
               method: "PUT",
@@ -137,9 +148,14 @@
                 "Content-Type": "application/json",
                 Authorization: "Bearer " + token
               },
-              body: JSON.stringify({ title: todo.title, completed: !todo.completed })
+              body: JSON.stringify({ title: todo.title, completed: desiredCompleted })
             });
-            if (updateRes.ok) {
+            if (!updateRes.ok) {
+              const errData = await updateRes.json().catch(() => ({}));
+              errorMsg.textContent = errData.error || "Failed to update todo.";
+              return;
+            }
+            {
               const updateData = await updateRes.json();
               const updatedLevel = Number(updateData.level);
               if (Number.isInteger(updatedLevel) && updatedLevel >= 1) {
@@ -175,6 +191,7 @@
       }
 
       unfinished.forEach((todo) => renderItem(todo, todoListUnfinished));
+      pendingApproval.forEach((todo) => renderItem(todo, todoListPendingApproval));
       finished.forEach((todo) => renderItem(todo, todoListFinished));
     }
 

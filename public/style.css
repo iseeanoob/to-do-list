@@ -309,6 +309,10 @@ button.action:disabled,
   background: #2563eb;
 }
 
+.approve {
+  background: #1565c0;
+}
+
 .profile-menu {
   position: fixed;
   top: 16px;
