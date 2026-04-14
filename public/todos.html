@@ -9,16 +9,17 @@
   <div class="container">
     <h1>📝 My Todos</h1>
     <p>Click a todo to toggle completion, or use the icon to remove it.</p>
-    <p id="userInfo"></p>
 
     <form id="todoForm">
       <input type="text" id="todoInput" placeholder="New todo..." required />
       <button type="submit">Add Todo</button>
     </form>
 
-    <ul id="todoList"></ul>
+    <h3>Unfinished</h3>
+    <ul id="todoListUnfinished"></ul>
+    <h3>Finished</h3>
+    <ul id="todoListFinished"></ul>
     <p id="errorMsg" class="error"></p>
-    <button id="logoutBtn">Logout</button>
   </div>
 
   <script>
@@ -27,12 +28,11 @@
       window.location.href = "login.html";
     }
 
-    const userInfo = document.getElementById("userInfo");
-    const todoList = document.getElementById("todoList");
+    const todoListUnfinished = document.getElementById("todoListUnfinished");
+    const todoListFinished = document.getElementById("todoListFinished");
     const todoForm = document.getElementById("todoForm");
     const todoInput = document.getElementById("todoInput");
     const errorMsg = document.getElementById("errorMsg");
-    const logoutBtn = document.getElementById("logoutBtn");
 
     // Decode token to get username/email
     function parseJwt(token) {
@@ -49,8 +49,6 @@
       window.location.href = "login.html";
     }
 
-    userInfo.textContent = `Logged in as: ${user.username} (${user.email})`;
-
     async function fetchTodos() {
       try {
         const res = await fetch("/todos", {
@@ -65,10 +63,18 @@
     }
 
     function renderTodos(todos) {
-      todoList.innerHTML = "";
-      todos.forEach(todo => {
+      todoListUnfinished.innerHTML = "";
+      todoListFinished.innerHTML = "";
+
+      const unfinished = todos.filter((todo) => !todo.completed);
+      const finished = todos.filter((todo) => Boolean(todo.completed));
+
+      function renderItem(todo, targetList) {
         const li = document.createElement("li");
-        li.textContent = todo.title;
+        const assignedByAdmin = Number(todo.assigned_by_role) >= 4;
+        li.textContent = assignedByAdmin
+          ? `${todo.title} (Assigned by ${Number(todo.assigned_by_role) === 5 ? "Superadmin" : "Admin"})`
+          : todo.title;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
         li.style.fontSize = "20px";
 
@@ -108,8 +114,11 @@
         });
 
         li.appendChild(delBtn);
-        todoList.appendChild(li);
-      });
+        targetList.appendChild(li);
+      }
+
+      unfinished.forEach((todo) => renderItem(todo, todoListUnfinished));
+      finished.forEach((todo) => renderItem(todo, todoListFinished));
     }
 
     // Add new todo
@@ -135,14 +144,9 @@
       }
     });
 
-    // Logout
-    logoutBtn.addEventListener("click", () => {
-      localStorage.removeItem("token");
-      window.location.href = "login.html";
-    });
-
     // Initial fetch
     fetchTodos();
   </script>
+  <script src="profile-menu.js"></script>
 </body>
 </html>
