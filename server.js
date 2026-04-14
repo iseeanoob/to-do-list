@@ -11,7 +11,8 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
-const MAX_DATA_URL_LENGTH = 100000;
+// 2,000,000 chars keeps profile images practical while staying below MEDIUMTEXT capacity.
+const MAX_DATA_URL_LENGTH = 2000000;
 const MAX_PROFILE_URL_LENGTH = 2048;
 
 const DB_CONFIG = {
@@ -41,7 +42,7 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           email VARCHAR(255) NOT NULL UNIQUE,
           password VARCHAR(255) NOT NULL,
           role INT DEFAULT 1,
-          profile_picture_url VARCHAR(2048) DEFAULT NULL
+          profile_picture_url MEDIUMTEXT DEFAULT NULL
         )
       `);
 
@@ -59,14 +60,19 @@ async function connectWithRetry(retries = 10, delay = 5000) {
       `);
 
       const [usersProfilePictureColumn] = await conn.query(
-        `SELECT 1
+        `SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
          FROM INFORMATION_SCHEMA.COLUMNS
          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'profile_picture_url'
          LIMIT 1`,
         [DB_CONFIG.database]
       );
       if (usersProfilePictureColumn.length === 0) {
-        await conn.query("ALTER TABLE users ADD COLUMN profile_picture_url VARCHAR(2048) DEFAULT NULL");
+        await conn.query("ALTER TABLE users ADD COLUMN profile_picture_url MEDIUMTEXT DEFAULT NULL");
+      } else if (
+        usersProfilePictureColumn[0].DATA_TYPE === "varchar" &&
+        Number(usersProfilePictureColumn[0].CHARACTER_MAXIMUM_LENGTH || 0) < MAX_DATA_URL_LENGTH
+      ) {
+        await conn.query("ALTER TABLE users MODIFY COLUMN profile_picture_url MEDIUMTEXT DEFAULT NULL");
       }
 
       const [todosAssignedByUserColumn] = await conn.query(
@@ -330,6 +336,72 @@ const userRateLimit = rateLimit({
       res.json({ id: result.insertId, title, completed: false });
     } catch {
       res.status(500).json({ error: "Error adding todo." });
+    }
+  });
+
+  // ✏️ Update todo
+  app.put("/todos/:id", userRateLimit, authenticateToken, async (req, res) => {
+    const todoId = Number.parseInt(req.params.id, 10);
+    const hasTitle = typeof req.body?.title === "string";
+    const title = hasTitle ? req.body.title.trim() : "";
+    const hasCompleted = typeof req.body?.completed === "boolean";
+
+    if (!Number.isInteger(todoId) || todoId <= 0) {
+      return res.status(400).json({ error: "Invalid todo id." });
+    }
+    if (!hasTitle && !hasCompleted) {
+      return res.status(400).json({ error: "Provide title and/or completed status." });
+    }
+    if (hasTitle && !title) {
+      return res.status(400).json({ error: "Title cannot be empty." });
+    }
+
+    try {
+      const setClauses = [];
+      const params = [];
+      if (hasTitle) {
+        setClauses.push("title = ?");
+        params.push(title);
+      }
+      if (hasCompleted) {
+        setClauses.push("completed = ?");
+        params.push(req.body.completed);
+      }
+      params.push(todoId, req.user.id);
+
+      const [result] = await pool.query(
+        `UPDATE todos SET ${setClauses.join(", ")} WHERE id = ? AND user_id = ?`,
+        params
+      );
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Todo not found." });
+      }
+      res.json({ message: "Todo updated." });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error updating todo." });
+    }
+  });
+
+  // 🗑️ Delete todo
+  app.delete("/todos/:id", userRateLimit, authenticateToken, async (req, res) => {
+    const todoId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(todoId) || todoId <= 0) {
+      return res.status(400).json({ error: "Invalid todo id." });
+    }
+
+    try {
+      const [result] = await pool.query("DELETE FROM todos WHERE id = ? AND user_id = ?", [
+        todoId,
+        req.user.id,
+      ]);
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Todo not found." });
+      }
+      res.json({ message: "Todo deleted." });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error deleting todo." });
     }
   });
 
