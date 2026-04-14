@@ -97,7 +97,7 @@ const ROLES = {
 };
 
 function canAssignTodo(assignerRole, targetRole) {
-  if (assignerRole === 5) return targetRole < 5;
+  if (assignerRole === 5) return targetRole <= 5;
   if (assignerRole === 4) return targetRole <= 4;
   return false;
 }
