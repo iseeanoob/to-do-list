@@ -341,20 +341,36 @@ const userRateLimit = rateLimit({
   // ✏️ Update todo
   app.put("/todos/:id", userRateLimit, authenticateToken, async (req, res) => {
     const todoId = Number.parseInt(req.params.id, 10);
-    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const hasTitle = typeof req.body?.title === "string";
+    const title = hasTitle ? req.body.title.trim() : "";
     const hasCompleted = typeof req.body?.completed === "boolean";
 
     if (!Number.isInteger(todoId) || todoId <= 0) {
       return res.status(400).json({ error: "Invalid todo id." });
     }
-    if (!title || !hasCompleted) {
-      return res.status(400).json({ error: "Title and completed status required." });
+    if (!hasTitle && !hasCompleted) {
+      return res.status(400).json({ error: "Provide title and/or completed status." });
+    }
+    if (hasTitle && !title) {
+      return res.status(400).json({ error: "Title cannot be empty." });
     }
 
     try {
+      const setClauses = [];
+      const params = [];
+      if (hasTitle) {
+        setClauses.push("title = ?");
+        params.push(title);
+      }
+      if (hasCompleted) {
+        setClauses.push("completed = ?");
+        params.push(req.body.completed);
+      }
+      params.push(todoId, req.user.id);
+
       const [result] = await pool.query(
-        "UPDATE todos SET title = ?, completed = ? WHERE id = ? AND user_id = ?",
-        [title, req.body.completed, todoId, req.user.id]
+        `UPDATE todos SET ${setClauses.join(", ")} WHERE id = ? AND user_id = ?`,
+        params
       );
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "Todo not found." });
