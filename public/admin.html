@@ -46,6 +46,7 @@
   const todoRequestsTable = document.getElementById("todoRequestsTable");
   const backToTodosBtn = document.getElementById("backToTodosBtn");
   const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+  const TODO_REQUESTS_COLUMN_COUNT = 4;
 
   if (!token) window.location.href = "login.html";
   backToTodosBtn.addEventListener("click", () => {
@@ -183,7 +184,7 @@
       `;
     });
     if (todoRequests.length === 0) {
-      todoRequestsTable.innerHTML = `<tr><td colspan="4"><em>No requests</em></td></tr>`;
+      todoRequestsTable.innerHTML = `<tr><td colspan="${TODO_REQUESTS_COLUMN_COUNT}"><em>No requests</em></td></tr>`;
     }
   }
 

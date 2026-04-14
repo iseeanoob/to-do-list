@@ -280,6 +280,7 @@ const ROLES = {
   4: "admin",
   5: "superadmin",
 };
+const MIN_ADMIN_ROLE_LEVEL = 4;
 
 const TODO_DIFFICULTY_LEVELS = ["easy", "medium", "hard", "insane"];
 const TODO_DIFFICULTY_XP = {
@@ -288,6 +289,8 @@ const TODO_DIFFICULTY_XP = {
   hard: 20,
   insane: 40,
 };
+const TODO_DEFAULT_COMPLETED = false;
+const TODO_DEFAULT_COMPLETION_REQUESTED = false;
 
 function normalizeDifficulty(value) {
   const normalized = String(value || "easy").trim().toLowerCase();
@@ -510,7 +513,13 @@ const userRateLimit = rateLimit({
         "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
         [req.user.id, title, difficulty, req.user.id, req.user.role]
       );
-       res.json({ id: result.insertId, title, completed: false, completion_requested: false, difficulty });
+       res.json({
+        id: result.insertId,
+        title,
+        completed: TODO_DEFAULT_COMPLETED,
+        completion_requested: TODO_DEFAULT_COMPLETION_REQUESTED,
+        difficulty,
+      });
     } catch {
       res.status(500).json({ error: "Error adding todo." });
     }
@@ -581,7 +590,7 @@ const userRateLimit = rateLimit({
           }
         }
         if (hasDifficulty) {
-          const assignedByAdmin = Number(todo.assigned_by_role) >= 4;
+          const assignedByAdmin = Number(todo.assigned_by_role) >= MIN_ADMIN_ROLE_LEVEL;
           const isSelfAssigned = Number(todo.assigned_by_user_id) === Number(req.user.id) && !assignedByAdmin;
           if (!isSelfAssigned) {
             await conn.rollback();
@@ -796,8 +805,8 @@ const userRateLimit = rateLimit({
           id: result.insertId,
           user_id: target.id,
           title,
-          completed: false,
-          completion_requested: false,
+          completed: TODO_DEFAULT_COMPLETED,
+          completion_requested: TODO_DEFAULT_COMPLETION_REQUESTED,
           difficulty,
         },
       });
