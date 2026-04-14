@@ -74,9 +74,9 @@
         if (canManageUser(myRole, userRoleNum)) {
           actionsHTML += `
             <div class="actions">
-            <button class="action promote" onclick="changeRole(${user.id}, ${userRoleNum + 1})" ${userRoleNum >= 5 ? "disabled" : ""}>⬆️ Promote</button>
-            <button class="action demote" onclick="changeRole(${user.id}, ${userRoleNum - 1})" ${userRoleNum <= 1 ? "disabled" : ""}>⬇️ Demote</button>
-            <button class="action delete" onclick="deleteUser(${user.id})">🗑 Delete</button>
+            <button class="action promote" data-action="promote" data-user-id="${user.id}" data-new-role="${userRoleNum + 1}" ${userRoleNum >= 5 ? "disabled" : ""}>⬆️ Promote</button>
+            <button class="action demote" data-action="demote" data-user-id="${user.id}" data-new-role="${userRoleNum - 1}" ${userRoleNum <= 1 ? "disabled" : ""}>⬇️ Demote</button>
+            <button class="action delete" data-action="delete" data-user-id="${user.id}">🗑 Delete</button>
             </div>
           `;
         } else {
@@ -87,7 +87,7 @@
           ? `
             <div class="assign-wrap">
               <input class="assign-input" id="assignInput-${user.id}" type="text" placeholder="Todo for ${escapeHtml(user.username)}" />
-              <button class="assign-btn" onclick="assignTodo(${user.id})">Assign</button>
+              <button class="assign-btn" data-action="assign" data-user-id="${user.id}">Assign</button>
             </div>
           `
           : "<em>Not allowed</em>";
@@ -159,6 +159,36 @@
       alert(err.message);
     }
   }
+
+  usersTable.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button || button.disabled) return;
+
+    const action = button.dataset.action;
+    const userId = Number(button.dataset.userId);
+    if (!Number.isInteger(userId) || userId <= 0) return;
+
+    if (action === "promote" || action === "demote") {
+      const newRole = Number(button.dataset.newRole);
+      if (!Number.isInteger(newRole)) return;
+      changeRole(userId, newRole);
+      return;
+    }
+    if (action === "delete") {
+      deleteUser(userId);
+      return;
+    }
+    if (action === "assign") {
+      assignTodo(userId);
+      return;
+    }
+
+    console.warn("Unknown admin action encountered:", {
+      action,
+      userId,
+      dataset: { ...button.dataset },
+    });
+  });
 
   fetchUsersTodos();
 </script>

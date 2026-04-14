@@ -14,6 +14,9 @@
       <input type="text" id="todoInput" placeholder="New todo..." required />
       <button type="submit">Add Todo</button>
     </form>
+    <div id="adminNavWrap" style="display: none; margin-top: 10px;">
+      <button type="button" id="goToAdminBtn">Go to Admin Panel</button>
+    </div>
 
     <h3>Unfinished</h3>
     <ul id="todoListUnfinished"></ul>
@@ -33,6 +36,8 @@
     const todoForm = document.getElementById("todoForm");
     const todoInput = document.getElementById("todoInput");
     const errorMsg = document.getElementById("errorMsg");
+    const adminNavWrap = document.getElementById("adminNavWrap");
+    const goToAdminBtn = document.getElementById("goToAdminBtn");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const SUPERADMIN_ROLE_LEVEL = 5;
 
@@ -49,6 +54,12 @@
     if (!user) {
       localStorage.removeItem("token");
       window.location.href = "login.html";
+    }
+    if (Number(user.role) >= MIN_ADMIN_ROLE_LEVEL) {
+      adminNavWrap.style.display = "block";
+      goToAdminBtn.addEventListener("click", () => {
+        window.location.href = "admin.html";
+      });
     }
 
     async function fetchTodos() {
