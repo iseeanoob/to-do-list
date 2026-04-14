@@ -154,7 +154,7 @@
     const input = document.getElementById(`assignInput-${userId}`);
     const difficultyInput = document.getElementById(`assignDifficulty-${userId}`);
     const title = input.value.trim();
-    const difficulty = (difficultyInput?.value || "").trim().toLowerCase();
+    const difficulty = (difficultyInput?.value || "").trim();
     if (!title) return alert("Please enter a todo title.");
     if (!TODO_DIFFICULTIES.includes(difficulty)) return alert("Please choose a valid difficulty.");
 

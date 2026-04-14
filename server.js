@@ -488,7 +488,7 @@ const userRateLimit = rateLimit({
         let progression = null;
         let xpGained = 0;
         if (shouldAwardXp) {
-          xpGained = TODO_DIFFICULTY_XP[todo.difficulty] || TODO_DIFFICULTY_XP.easy;
+          xpGained = TODO_DIFFICULTY_XP[todo.difficulty];
           const [userRows] = await conn.query(
             "SELECT xp, level FROM users WHERE id = ? LIMIT 1 FOR UPDATE",
             [req.user.id]

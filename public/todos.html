@@ -141,7 +141,8 @@
             });
             if (updateRes.ok) {
               const updateData = await updateRes.json();
-              if (Number.isInteger(Number(updateData.level))) {
+              const updatedLevel = Number(updateData.level);
+              if (Number.isInteger(updatedLevel) && updatedLevel >= 1) {
                 renderProgress(updateData);
               }
             }
