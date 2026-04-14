@@ -24,20 +24,6 @@ const DB_CONFIG = {
 
 let pool;
 
-async function ensureColumn(conn, tableName, columnName, columnDefinition) {
-  const [existing] = await conn.query(
-    `SELECT 1
-     FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
-     LIMIT 1`,
-    [DB_CONFIG.database, tableName, columnName]
-  );
-
-  if (existing.length === 0) {
-    await conn.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
-  }
-}
-
 // 🧠 Connect to MySQL with retry logic
 async function connectWithRetry(retries = 10, delay = 5000) {
   for (let i = 1; i <= retries; i++) {
@@ -70,9 +56,38 @@ async function connectWithRetry(retries = 10, delay = 5000) {
         )
       `);
 
-      await ensureColumn(conn, "users", "profile_picture_url", "VARCHAR(2048) DEFAULT NULL");
-      await ensureColumn(conn, "todos", "assigned_by_user_id", "INT DEFAULT NULL");
-      await ensureColumn(conn, "todos", "assigned_by_role", "INT DEFAULT NULL");
+      const [usersProfilePictureColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'profile_picture_url'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (usersProfilePictureColumn.length === 0) {
+        await conn.query("ALTER TABLE users ADD COLUMN profile_picture_url VARCHAR(2048) DEFAULT NULL");
+      }
+
+      const [todosAssignedByUserColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'assigned_by_user_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosAssignedByUserColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN assigned_by_user_id INT DEFAULT NULL");
+      }
+
+      const [todosAssignedByRoleColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'assigned_by_role'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosAssignedByRoleColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN assigned_by_role INT DEFAULT NULL");
+      }
 
       conn.release();
       console.log("✅ Tables ready");
@@ -263,17 +278,20 @@ const userRateLimit = rateLimit({
   app.put("/me/profile-picture", userRateLimit, authenticateToken, async (req, res) => {
     const rawUrl = typeof req.body?.profilePictureUrl === "string" ? req.body.profilePictureUrl.trim() : "";
     const isEmpty = rawUrl.length === 0;
-    const isDataUrl = /^data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+$/.test(rawUrl);
+    const isDataUrlCandidate = rawUrl.startsWith("data:image/");
     let isValidUrl = false;
 
     if (isEmpty) {
       isValidUrl = true;
-    } else if (isDataUrl) {
+    } else if (isDataUrlCandidate) {
       if (rawUrl.length > 100000) {
         return res.status(400).json({ error: "Data URL image is too large." });
       }
-      isValidUrl = true;
+      isValidUrl = /^data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+$/.test(rawUrl);
     } else {
+      if (rawUrl.length > 2048) {
+        return res.status(400).json({ error: "Profile picture URL is too long." });
+      }
       try {
         const parsed = new URL(rawUrl);
         isValidUrl = parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -285,10 +303,6 @@ const userRateLimit = rateLimit({
     if (!isValidUrl) {
       return res.status(400).json({ error: "Provide a valid image URL or data URL." });
     }
-    if (rawUrl.length > 2048) {
-      return res.status(400).json({ error: "Profile picture URL is too long." });
-    }
-
     try {
       const newValue = isEmpty ? null : rawUrl;
       await pool.query("UPDATE users SET profile_picture_url = ? WHERE id = ?", [
