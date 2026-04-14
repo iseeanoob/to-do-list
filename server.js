@@ -476,7 +476,6 @@ const userRateLimit = rateLimit({
         if (hasCompleted) {
           if (req.body.completed === true) {
             if (!Boolean(todo.completed)) {
-              setClauses.push("completed = FALSE");
               setClauses.push("completion_requested = TRUE");
             }
           } else {

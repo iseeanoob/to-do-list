@@ -140,7 +140,7 @@
 
         // Toggle complete
         li.addEventListener("click", async () => {
-          const desiredCompleted = (todo.completed || todo.completion_requested) ? false : true;
+          const desiredCompleted = !todo.completed && !todo.completion_requested;
           try {
             const updateRes = await fetch(`/todos/${todo.id}`, {
               method: "PUT",
