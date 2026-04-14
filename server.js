@@ -11,6 +11,7 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+// 2,000,000 chars keeps profile images practical while staying below MEDIUMTEXT capacity.
 const MAX_DATA_URL_LENGTH = 2000000;
 const MAX_PROFILE_URL_LENGTH = 2048;
 

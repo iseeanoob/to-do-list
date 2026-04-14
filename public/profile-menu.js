@@ -2,6 +2,8 @@
   const token = localStorage.getItem("token");
   const roleNames = { 1: "User", 2: "Moderator", 3: "Manager", 4: "Admin", 5: "Superadmin" };
   const MAX_UPLOAD_BYTES = 1024 * 1024;
+  // Must stay within server MAX_DATA_URL_LENGTH after base64/data-URL expansion.
+  const MAX_DATA_URL_LENGTH = 2000000;
 
   function parseJwt(rawToken) {
     try {
@@ -121,6 +123,11 @@
         }
         if (file.size > MAX_UPLOAD_BYTES) {
           alert("Image must be 1MB or smaller.");
+          return;
+        }
+        const estimatedDataUrlLength = Math.ceil((file.size * 4) / 3) + 64;
+        if (estimatedDataUrlLength > MAX_DATA_URL_LENGTH) {
+          alert("Image is too large after encoding. Please choose a smaller image.");
           return;
         }
 
