@@ -104,7 +104,6 @@
         });
         const todos = await res.json();
         renderTodos(todos);
-        fetchProgress();
       } catch (err) {
         console.error(err);
         errorMsg.textContent = "Failed to load todos.";
@@ -132,7 +131,7 @@
         // Toggle complete
         li.addEventListener("click", async () => {
           try {
-            await fetch(`/todos/${todo.id}`, {
+            const updateRes = await fetch(`/todos/${todo.id}`, {
               method: "PUT",
               headers: {
                 "Content-Type": "application/json",
@@ -140,6 +139,12 @@
               },
               body: JSON.stringify({ title: todo.title, completed: !todo.completed })
             });
+            if (updateRes.ok) {
+              const updateData = await updateRes.json();
+              if (Number.isInteger(Number(updateData.level))) {
+                renderProgress(updateData);
+              }
+            }
             fetchTodos();
           } catch (err) {
             console.error(err);
@@ -196,6 +201,7 @@
     });
 
     // Initial fetch
+    fetchProgress();
     fetchTodos();
   </script>
   <script src="profile-menu.js"></script>

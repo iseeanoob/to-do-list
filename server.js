@@ -190,7 +190,7 @@ const ROLES = {
   5: "superadmin",
 };
 
-const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+const TODO_DIFFICULTY_LEVELS = ["easy", "medium", "hard", "insane"];
 const TODO_DIFFICULTY_XP = {
   easy: 5,
   medium: 10,
@@ -200,7 +200,7 @@ const TODO_DIFFICULTY_XP = {
 
 function normalizeDifficulty(value) {
   const normalized = String(value || "easy").trim().toLowerCase();
-  return TODO_DIFFICULTIES.includes(normalized) ? normalized : null;
+  return TODO_DIFFICULTY_LEVELS.includes(normalized) ? normalized : null;
 }
 
 function getRequiredXpForLevel(level) {
