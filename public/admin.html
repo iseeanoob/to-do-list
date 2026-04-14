@@ -8,6 +8,9 @@
 <body class="admin-page">
 <div class="container">
   <h1>🛠 Admin Panel</h1>
+  <div class="admin-top-actions">
+    <button type="button" id="backToTodosBtn" class="back-to-todos-btn">⬅ Back to Todos</button>
+  </div>
   <p id="adminInfo"></p>
   <table>
     <thead>
@@ -28,8 +31,13 @@
   const token = localStorage.getItem("token");
   const usersTable = document.getElementById("usersTable");
   const adminInfo = document.getElementById("adminInfo");
+  const backToTodosBtn = document.getElementById("backToTodosBtn");
+  const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
 
   if (!token) window.location.href = "login.html";
+  backToTodosBtn.addEventListener("click", () => {
+    window.location.href = "todos.html";
+  });
 
   const ROLES = {1: "User", 2: "Moderator", 3: "Manager", 4: "Admin", 5: "Superadmin"};
 
@@ -67,7 +75,7 @@
       users.forEach(user => {
         const userRoleNum = Number(user.role); // ensure numeric
         const todosHTML = user.todos.length
-          ? `<ul class="todo-list">${user.todos.map(todo => `<li class="${Boolean(todo.completed) ? 'completed' : ''}">${escapeHtml(todo.title)}</li>`).join('')}</ul>`
+          ? `<ul class="todo-list">${user.todos.map(todo => `<li class="${Boolean(todo.completed) ? 'completed' : ''}">${escapeHtml(todo.title)} <small>(${escapeHtml(todo.difficulty || "easy")})</small></li>`).join('')}</ul>`
           : "<em>No todos</em>";
 
         let actionsHTML = "";
@@ -87,6 +95,9 @@
           ? `
             <div class="assign-wrap">
               <input class="assign-input" id="assignInput-${user.id}" type="text" placeholder="Todo for ${escapeHtml(user.username)}" />
+              <select class="assign-difficulty" id="assignDifficulty-${user.id}">
+                ${TODO_DIFFICULTIES.map((difficulty) => `<option value="${difficulty}">${difficulty}</option>`).join("")}
+              </select>
               <button class="assign-btn" data-action="assign" data-user-id="${user.id}">Assign</button>
             </div>
           `
@@ -141,14 +152,17 @@
 
   async function assignTodo(userId) {
     const input = document.getElementById(`assignInput-${userId}`);
+    const difficultyInput = document.getElementById(`assignDifficulty-${userId}`);
     const title = input.value.trim();
+    const difficulty = (difficultyInput?.value || "").trim();
     if (!title) return alert("Please enter a todo title.");
+    if (!TODO_DIFFICULTIES.includes(difficulty)) return alert("Please choose a valid difficulty.");
 
     try {
       const res = await fetch(`/admin/users/${userId}/todos`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title })
+        body: JSON.stringify({ title, difficulty })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to assign todo.");
