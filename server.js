@@ -339,7 +339,7 @@ const userRateLimit = rateLimit({
   });
 
   // ✏️ Update todo
-  app.put("/todos/:id", authenticateToken, async (req, res) => {
+  app.put("/todos/:id", userRateLimit, authenticateToken, async (req, res) => {
     const todoId = Number.parseInt(req.params.id, 10);
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
     const hasCompleted = typeof req.body?.completed === "boolean";
@@ -367,7 +367,7 @@ const userRateLimit = rateLimit({
   });
 
   // 🗑️ Delete todo
-  app.delete("/todos/:id", authenticateToken, async (req, res) => {
+  app.delete("/todos/:id", userRateLimit, authenticateToken, async (req, res) => {
     const todoId = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(todoId) || todoId <= 0) {
       return res.status(400).json({ error: "Invalid todo id." });
