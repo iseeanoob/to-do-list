@@ -2,33 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Claim Team Todos | Node Docker App</title>
+  <title>Team Collaboration Board | Node Docker App</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="todos-page">
   <div class="container">
-    <h1>🙋 Claim Team Todos</h1>
+    <h1>🤝 Team Collaboration Board</h1>
     <div class="admin-top-actions">
       <button type="button" id="backToTodosBtn" class="back-to-todos-btn">⬅ Back to My Todos</button>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Todo</th>
-          <th>Difficulty</th>
-          <th>Status</th>
-          <th>Posted By</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="claimTeamTodoTable"></tbody>
-    </table>
+    <div class="team-collab-layout">
+      <div>
+        <table>
+          <thead>
+            <tr>
+              <th>Todo</th>
+              <th>Difficulty</th>
+              <th>Team</th>
+              <th>Messages</th>
+              <th>Status</th>
+              <th>Posted By</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="claimTeamTodoTable"></tbody>
+        </table>
+      </div>
+      <div class="team-chat-panel">
+        <h3 id="teamChatTitle">Select a team todo</h3>
+        <p id="teamChatMeta" class="team-chat-meta">Join a team to start collaborating in chat.</p>
+        <div id="teamMemberList" class="team-member-list"></div>
+        <div id="teamMessageList" class="team-message-list"></div>
+        <form id="teamMessageForm" class="team-message-form">
+          <textarea id="teamMessageInput" rows="3" maxlength="1000" placeholder="Write a team message..."></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
   </div>
 
   <script>
     const token = localStorage.getItem("token");
     const backToTodosBtn = document.getElementById("backToTodosBtn");
     const claimTeamTodoTable = document.getElementById("claimTeamTodoTable");
+    const teamChatTitle = document.getElementById("teamChatTitle");
+    const teamChatMeta = document.getElementById("teamChatMeta");
+    const teamMemberList = document.getElementById("teamMemberList");
+    const teamMessageList = document.getElementById("teamMessageList");
+    const teamMessageForm = document.getElementById("teamMessageForm");
+    const teamMessageInput = document.getElementById("teamMessageInput");
+    let selectedTeamTodoId = null;
+    let selectedTeamTodo = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -60,23 +84,34 @@
     function renderTeamTodos(items) {
       claimTeamTodoTable.innerHTML = "";
       if (!items.length) {
-        claimTeamTodoTable.innerHTML = `<tr><td colspan="5"><em>No team todos posted yet.</em></td></tr>`;
+        claimTeamTodoTable.innerHTML = `<tr><td colspan="7"><em>No team todos posted yet.</em></td></tr>`;
         return;
       }
       items.forEach((item) => {
+        const memberCount = Number(item.member_count || 0);
+        const maxTeamSize = Number(item.max_team_size || 3);
+        const isMember = Number(item.current_user_is_member || 0) === 1;
+        const isFull = memberCount >= maxTeamSize;
         const todoText = item.description
           ? `${escapeHtml(item.title)} — ${escapeHtml(item.description)}`
           : escapeHtml(item.title);
-        const statusText = item.status === "claimed"
-          ? `claimed by ${escapeHtml(item.claimed_by_username || "someone")}`
-          : "open";
-        const actionHtml = item.status === "open"
-          ? `<button class="action assign" data-action="claim" data-team-todo-id="${item.id}">Claim</button>`
-          : "<em>Unavailable</em>";
+        const statusText = isMember
+          ? "you joined"
+          : isFull
+            ? "team full"
+            : "open";
+        const actionHtml = isMember
+          ? "<em>Joined</em>"
+          : isFull
+            ? "<em>Full</em>"
+            : `<button class="action assign" data-action="join" data-team-todo-id="${item.id}">Join Team</button>`;
+        const selectedClass = Number(selectedTeamTodoId) === Number(item.id) ? "selected-team-row" : "";
         claimTeamTodoTable.innerHTML += `
-          <tr>
+          <tr class="${selectedClass}" data-team-todo-id="${item.id}">
             <td>${todoText}</td>
             <td>${escapeHtml(item.difficulty || "easy")}</td>
+            <td>${memberCount} / ${maxTeamSize}</td>
+            <td>${Number(item.message_count || 0)}</td>
             <td>${statusText}</td>
             <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
             <td>${actionHtml}</td>
@@ -85,28 +120,135 @@
       });
     }
 
-    async function claimTeamTodo(teamTodoId) {
-      if (!confirm("Claim this team todo and add it to your todos?")) return;
+    async function joinTeamTodo(teamTodoId) {
+      if (!confirm("Join this team todo?")) return;
       try {
-        const res = await fetch(`/team-todos/${teamTodoId}/claim`, {
+        const res = await fetch(`/team-todos/${teamTodoId}/join`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` }
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Failed to claim team todo.");
-        alert(data.message || "Claimed.");
-        fetchTeamTodos();
+        if (!res.ok) throw new Error(data.error || "Failed to join team todo.");
+        await fetchTeamTodos();
+        await selectTeamTodo(teamTodoId);
       } catch (err) {
         alert(err.message);
       }
     }
 
+    async function fetchTeamMembers(teamTodoId) {
+      const res = await fetch(`/team-todos/${teamTodoId}/members`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load team members.");
+      return data;
+    }
+
+    async function fetchTeamMessages(teamTodoId) {
+      const res = await fetch(`/team-todos/${teamTodoId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load team messages.");
+      return data;
+    }
+
+    function renderTeamMembers(members) {
+      if (!members.length) {
+        teamMemberList.innerHTML = "<em>No team members yet.</em>";
+        return;
+      }
+      teamMemberList.innerHTML = `<strong>Members:</strong> ${members.map((member) => escapeHtml(member.username)).join(", ")}`;
+    }
+
+    function renderTeamMessages(messages) {
+      if (!messages.length) {
+        teamMessageList.innerHTML = "<em>No messages yet. Start the conversation.</em>";
+        return;
+      }
+      teamMessageList.innerHTML = messages.map((entry) => `
+        <div class="team-message-entry">
+          <strong>${escapeHtml(entry.username || "Unknown")}:</strong>
+          <span>${escapeHtml(entry.message || "")}</span>
+        </div>
+      `).join("");
+      teamMessageList.scrollTop = teamMessageList.scrollHeight;
+    }
+
+    async function selectTeamTodo(teamTodoId) {
+      selectedTeamTodoId = Number(teamTodoId);
+      selectedTeamTodo = null;
+      try {
+        const teamTodosRes = await fetch("/team-todos", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const teamTodos = await teamTodosRes.json().catch(() => []);
+        if (!teamTodosRes.ok) throw new Error("Failed to refresh team todo details.");
+        selectedTeamTodo = teamTodos.find((item) => Number(item.id) === Number(teamTodoId)) || null;
+        if (!selectedTeamTodo) {
+          throw new Error("Team todo not found.");
+        }
+        renderTeamTodos(teamTodos);
+        teamChatTitle.textContent = selectedTeamTodo.title || "Team Chat";
+        const memberCount = Number(selectedTeamTodo.member_count || 0);
+        const maxTeamSize = Number(selectedTeamTodo.max_team_size || 3);
+        const isMember = Number(selectedTeamTodo.current_user_is_member || 0) === 1;
+        teamChatMeta.textContent = `Team size: ${memberCount}/${maxTeamSize}${isMember ? " • You are a member" : " • Join to send/read messages"}`;
+        const [members, messages] = await Promise.all([
+          fetchTeamMembers(teamTodoId),
+          fetchTeamMessages(teamTodoId).catch((err) => {
+            teamMessageList.innerHTML = `<em>${escapeHtml(err.message)}</em>`;
+            return [];
+          })
+        ]);
+        renderTeamMembers(members);
+        if (messages.length || isMember) renderTeamMessages(messages);
+      } catch (err) {
+        teamChatTitle.textContent = "Select a team todo";
+        teamChatMeta.textContent = err.message || "Unable to load team chat.";
+      }
+    }
+
+    teamMessageForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!selectedTeamTodoId) {
+        alert("Select a team todo first.");
+        return;
+      }
+      const message = teamMessageInput.value.trim();
+      if (!message) return;
+      try {
+        const res = await fetch(`/team-todos/${selectedTeamTodoId}/messages`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to send message.");
+        teamMessageInput.value = "";
+        await selectTeamTodo(selectedTeamTodoId);
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
     claimTeamTodoTable.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-action='claim']");
-      if (!button) return;
-      const teamTodoId = Number(button.dataset.teamTodoId);
+      const joinButton = event.target.closest("button[data-action='join']");
+      if (joinButton) {
+        const teamTodoId = Number(joinButton.dataset.teamTodoId);
+        if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+        joinTeamTodo(teamTodoId);
+        return;
+      }
+      const row = event.target.closest("tr[data-team-todo-id]");
+      if (!row) return;
+      const teamTodoId = Number(row.dataset.teamTodoId);
       if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
-      claimTeamTodo(teamTodoId);
+      selectTeamTodo(teamTodoId);
     });
 
     fetchTeamTodos();
