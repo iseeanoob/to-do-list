@@ -13,7 +13,7 @@ module.exports = function todosRouter(pool) {
   const router = express.Router();
 
   // ✅ Get todos
-  router.get("/todos", authenticateToken, async (req, res) => {
+  router.get("/todos", userRateLimit, authenticateToken, async (req, res) => {
     try {
       const [rows] = await pool.query(
         "SELECT id, user_id, title, completed, completion_requested, completion_notes, difficulty, assigned_by_user_id, assigned_by_role, created_at FROM todos WHERE user_id = ? ORDER BY created_at DESC",
@@ -26,7 +26,7 @@ module.exports = function todosRouter(pool) {
   });
 
   // ➕ Add todo
-  router.post("/todos", authenticateToken, async (req, res) => {
+  router.post("/todos", userRateLimit, authenticateToken, async (req, res) => {
     const { title } = req.body;
     const difficulty = normalizeDifficulty(req.body?.difficulty);
     if (!title) return res.status(400).json({ error: "Title required." });

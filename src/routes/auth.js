@@ -2,12 +2,13 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config");
+const { userRateLimit } = require("../middleware/rateLimits");
 
 module.exports = function authRouter(pool) {
   const router = express.Router();
 
   // 🧾 Register
-  router.post("/register", async (req, res) => {
+  router.post("/register", userRateLimit, async (req, res) => {
     const { username, email, password, role } = req.body;
     if (!username || !email || !password)
       return res.status(400).json({ error: "All fields required." });
@@ -44,7 +45,7 @@ module.exports = function authRouter(pool) {
   });
 
   // 🔑 Login
-  router.post("/login", async (req, res) => {
+  router.post("/login", userRateLimit, async (req, res) => {
     const { identifier, password } = req.body;
     if (!identifier || !password)
       return res.status(400).json({ error: "Missing credentials." });
@@ -84,7 +85,7 @@ module.exports = function authRouter(pool) {
   });
 
   // 🧙‍♂️ Create first superadmin (one-time use)
-  router.post("/create-superadmin", async (req, res) => {
+  router.post("/create-superadmin", userRateLimit, async (req, res) => {
     const { secret, username, email, password } = req.body;
     if (secret !== "bootstrapSecret123")
       return res.status(403).json({ error: "Forbidden" });
