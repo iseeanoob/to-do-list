@@ -7,7 +7,7 @@
 </head>
 <body class="admin-page">
   <div class="container">
-    <h1>📋 Team Todo Board (Admin)</h1>
+    <h1>📋 Collaboration Todo Board (Admin)</h1>
     <div class="admin-top-actions">
       <button type="button" id="backToAdminBtn" class="back-to-todos-btn">⬅ Back to Admin</button>
       <button type="button" id="openClaimPageBtn" class="back-to-todos-btn">🙋 Open Claim Page</button>
@@ -22,8 +22,8 @@
         <option value="hard">hard</option>
         <option value="insane">insane</option>
       </select>
-      <input type="number" id="teamTodoMaxTeamSizeInput" min="2" max="20" value="3" />
-      <button type="submit">Create team todo</button>
+      <input type="number" id="teamTodoMaxTeamSizeInput" min="1" max="20" value="3" />
+      <button type="submit">Create collaboration todo</button>
     </form>
 
     <table>
@@ -32,10 +32,10 @@
           <th>Todo</th>
           <th>Difficulty</th>
           <th>Status</th>
-          <th>Team</th>
+          <th>Participants</th>
           <th>Messages</th>
           <th>Created By</th>
-          <th>Started By</th>
+          <th>Progress</th>
         </tr>
       </thead>
       <tbody id="teamTodoTable"></tbody>
@@ -112,7 +112,17 @@
         const claimedBy = item.claimed_by_username
           ? `${escapeHtml(item.claimed_by_username)}${item.claimed_todo_id ? ` (todo #${item.claimed_todo_id})` : ""}`
           : "-";
-        const statusText = memberCount > 0 ? "in progress" : "open";
+        const completedBy = item.completed_by_username
+          ? `${escapeHtml(item.completed_by_username)}${item.completed_at ? ` (${new Date(item.completed_at).toLocaleString()})` : ""}`
+          : "";
+        const statusText = item.status === "completed"
+          ? "completed"
+          : memberCount > 0
+            ? "in progress"
+            : "open";
+        const progressText = item.status === "completed"
+          ? `Done by ${completedBy || "member"}${item.completion_notes ? ` — ${escapeHtml(item.completion_notes)}` : ""}`
+          : claimedBy;
         teamTodoTable.innerHTML += `
           <tr>
             <td>${todoText}</td>
@@ -121,7 +131,7 @@
             <td>${memberCount} / ${maxTeamSize}</td>
             <td>${Number(item.message_count || 0)}</td>
             <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
-            <td>${claimedBy}</td>
+            <td>${progressText}</td>
           </tr>
         `;
       });
@@ -138,8 +148,8 @@
         alert("Choose a valid difficulty.");
         return;
       }
-      if (!Number.isInteger(maxTeamSize) || maxTeamSize < 2 || maxTeamSize > 20) {
-        alert("Max team size must be between 2 and 20.");
+      if (!Number.isInteger(maxTeamSize) || maxTeamSize < 1 || maxTeamSize > 20) {
+        alert("Max team size must be between 1 and 20.");
         return;
       }
       try {
