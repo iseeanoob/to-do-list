@@ -194,15 +194,15 @@
           : todo.completion_requested
             ? "Awaiting approval"
             : "Open";
-        const completionNotes = String(todo.completion_notes || "").trim();
-        const completionNotesSuffix = completionNotes ? `, Notes: ${completionNotes}` : "";
+        const completionNotesText = String(todo.completion_notes || "").trim();
+        const completionNotesSuffix = completionNotesText ? `, Notes: ${completionNotesText}` : "";
         li.textContent = `${todo.title} (${difficulty}, ${assignedByText}, ${statusText}${completionNotesSuffix})`;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
 
         // Toggle complete
         li.addEventListener("click", async () => {
           const desiredCompleted = !todo.completed && !todo.completion_requested;
-          const completionNotes = desiredCompleted
+          const userCompletionNotes = desiredCompleted
             ? String(prompt("How did you do it? (optional)") || "").trim()
             : "";
           try {
@@ -212,7 +212,7 @@
                 "Content-Type": "application/json",
                 Authorization: "Bearer " + token
               },
-              body: JSON.stringify({ title: todo.title, completed: desiredCompleted, completionNotes })
+              body: JSON.stringify({ title: todo.title, completed: desiredCompleted, completionNotes: userCompletionNotes })
             });
             if (!updateRes.ok) {
               const errData = await updateRes.json().catch(() => ({}));

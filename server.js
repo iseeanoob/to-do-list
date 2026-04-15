@@ -601,6 +601,9 @@ const userRateLimit = rateLimit({
     if (hasCompletionNotes && completionNotes.length > MAX_COMPLETION_NOTES_LENGTH) {
       return res.status(400).json({ error: `Completion notes must be ${MAX_COMPLETION_NOTES_LENGTH} characters or less.` });
     }
+    if (hasCompletionNotes && (!hasCompleted || req.body.completed !== true)) {
+      return res.status(400).json({ error: "Completion notes can only be set while requesting completion." });
+    }
 
     try {
       const conn = await pool.getConnection();
@@ -649,10 +652,6 @@ const userRateLimit = rateLimit({
             setClauses.push("completion_requested = FALSE");
             setClauses.push("completion_notes = NULL");
           }
-        }
-        if (hasCompletionNotes && !hasCompleted) {
-          await conn.rollback();
-          return res.status(400).json({ error: "Completion notes can only be set while requesting completion." });
         }
         if (hasDifficulty) {
           const assignedByAdmin = Number(todo.assigned_by_role) >= MIN_ADMIN_ROLE_LEVEL;
