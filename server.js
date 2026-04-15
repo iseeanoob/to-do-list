@@ -89,12 +89,15 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           title VARCHAR(255) NOT NULL,
           description TEXT DEFAULT NULL,
           difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy',
-          status ENUM('open', 'claimed') NOT NULL DEFAULT 'open',
+          status ENUM('open', 'claimed', 'completed') NOT NULL DEFAULT 'open',
           max_team_size INT NOT NULL DEFAULT 3,
           created_by_user_id INT NOT NULL,
           created_by_role INT NOT NULL,
           claimed_by_user_id INT DEFAULT NULL,
           claimed_todo_id INT DEFAULT NULL,
+          completion_notes TEXT DEFAULT NULL,
+          completed_by_user_id INT DEFAULT NULL,
+          completed_at TIMESTAMP NULL DEFAULT NULL,
           claimed_at TIMESTAMP NULL DEFAULT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -322,6 +325,39 @@ async function connectWithRetry(retries = 10, delay = 5000) {
       if (teamTodosMaxTeamSizeColumn.length === 0) {
         await conn.query("ALTER TABLE team_todos ADD COLUMN max_team_size INT NOT NULL DEFAULT 3");
       }
+      await conn.query(
+        "ALTER TABLE team_todos MODIFY COLUMN status ENUM('open', 'claimed', 'completed') NOT NULL DEFAULT 'open'"
+      );
+      const [teamTodosCompletionNotesColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'team_todos' AND COLUMN_NAME = 'completion_notes'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (teamTodosCompletionNotesColumn.length === 0) {
+        await conn.query("ALTER TABLE team_todos ADD COLUMN completion_notes TEXT DEFAULT NULL");
+      }
+      const [teamTodosCompletedByColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'team_todos' AND COLUMN_NAME = 'completed_by_user_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (teamTodosCompletedByColumn.length === 0) {
+        await conn.query("ALTER TABLE team_todos ADD COLUMN completed_by_user_id INT DEFAULT NULL");
+      }
+      const [teamTodosCompletedAtColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'team_todos' AND COLUMN_NAME = 'completed_at'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (teamTodosCompletedAtColumn.length === 0) {
+        await conn.query("ALTER TABLE team_todos ADD COLUMN completed_at TIMESTAMP NULL DEFAULT NULL");
+      }
 
       conn.release();
       console.log("✅ Tables ready");
@@ -385,7 +421,7 @@ const TODO_DEFAULT_COMPLETION_REQUESTED = false;
   function normalizeTeamSize(value) {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isInteger(parsed)) return null;
-    return parsed >= 2 && parsed <= 20 ? parsed : null;
+    return parsed >= 1 && parsed <= 20 ? parsed : null;
   }
 
   async function ensureTeamTodoMessagingAccess(teamTodoId, user) {
@@ -1245,6 +1281,10 @@ const userRateLimit = rateLimit({
            tt.claimed_by_user_id,
            claimer.username AS claimed_by_username,
            tt.claimed_todo_id,
+           tt.completion_notes,
+           tt.completed_by_user_id,
+           completer.username AS completed_by_username,
+           tt.completed_at,
            tt.claimed_at,
            tt.created_at,
            COUNT(DISTINCT tm.user_id) AS member_count,
@@ -1257,6 +1297,7 @@ const userRateLimit = rateLimit({
          FROM team_todos tt
          INNER JOIN users creator ON creator.id = tt.created_by_user_id
          LEFT JOIN users claimer ON claimer.id = tt.claimed_by_user_id
+         LEFT JOIN users completer ON completer.id = tt.completed_by_user_id
          LEFT JOIN team_todo_members tm ON tm.team_todo_id = tt.id
          GROUP BY
            tt.id,
@@ -1270,6 +1311,10 @@ const userRateLimit = rateLimit({
            tt.claimed_by_user_id,
            claimer.username,
            tt.claimed_todo_id,
+           tt.completion_notes,
+           tt.completed_by_user_id,
+           completer.username,
+           tt.completed_at,
            tt.claimed_at,
            tt.created_at
          ORDER BY (COUNT(DISTINCT tm.user_id) < tt.max_team_size) DESC, tt.created_at DESC`,
@@ -1289,7 +1334,7 @@ const userRateLimit = rateLimit({
     const maxTeamSize = normalizeTeamSize(req.body?.maxTeamSize);
     if (!title) return res.status(400).json({ error: "Title required." });
     if (!difficulty) return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
-    if (!maxTeamSize) return res.status(400).json({ error: "Max team size must be between 2 and 20." });
+    if (!maxTeamSize) return res.status(400).json({ error: "Max team size must be between 1 and 20." });
 
     try {
       const [result] = await pool.query(
@@ -1328,6 +1373,10 @@ const userRateLimit = rateLimit({
            tt.claimed_by_user_id,
            claimer.username AS claimed_by_username,
            tt.claimed_todo_id,
+           tt.completion_notes,
+           tt.completed_by_user_id,
+           completer.username AS completed_by_username,
+           tt.completed_at,
            tt.claimed_at,
            tt.created_at,
            COUNT(DISTINCT tm.user_id) AS member_count,
@@ -1339,6 +1388,7 @@ const userRateLimit = rateLimit({
          FROM team_todos tt
          INNER JOIN users creator ON creator.id = tt.created_by_user_id
          LEFT JOIN users claimer ON claimer.id = tt.claimed_by_user_id
+         LEFT JOIN users completer ON completer.id = tt.completed_by_user_id
          LEFT JOIN team_todo_members tm ON tm.team_todo_id = tt.id
          GROUP BY
            tt.id,
@@ -1352,6 +1402,10 @@ const userRateLimit = rateLimit({
            tt.claimed_by_user_id,
            claimer.username,
            tt.claimed_todo_id,
+           tt.completion_notes,
+           tt.completed_by_user_id,
+           completer.username,
+           tt.completed_at,
            tt.claimed_at,
            tt.created_at
          ORDER BY tt.created_at DESC`
@@ -1398,6 +1452,10 @@ const userRateLimit = rateLimit({
           [teamTodoId]
         );
         const memberCount = Number(memberCountRows[0]?.memberCount || 0);
+        if (teamTodo.status === "completed") {
+          await conn.rollback();
+          return res.status(400).json({ error: "This team todo is already completed." });
+        }
         if (memberCount >= Number(teamTodo.max_team_size || 3)) {
           await conn.rollback();
           return res.status(400).json({ error: "This team is already full." });
@@ -1432,6 +1490,71 @@ const userRateLimit = rateLimit({
 
   app.post("/team-todos/:id/join", userRateLimit, authenticateToken, joinTeamTodoHandler);
   app.post("/team-todos/:id/claim", userRateLimit, authenticateToken, joinTeamTodoHandler);
+
+  app.post("/team-todos/:id/complete", userRateLimit, authenticateToken, async (req, res) => {
+    const teamTodoId = Number.parseInt(req.params.id, 10);
+    const completionNotes = typeof req.body?.completionNotes === "string"
+      ? String(req.body.completionNotes || "").trim()
+      : "";
+    if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) {
+      return res.status(400).json({ error: "Invalid team todo id." });
+    }
+    if (completionNotes.length > MAX_COMPLETION_NOTES_LENGTH) {
+      return res.status(400).json({ error: `Completion notes must be ${MAX_COMPLETION_NOTES_LENGTH} characters or less.` });
+    }
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [rows] = await conn.query(
+          `SELECT id, status
+           FROM team_todos
+           WHERE id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [teamTodoId]
+        );
+        if (rows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Team todo not found." });
+        }
+        const teamTodo = rows[0];
+        if (teamTodo.status === "completed") {
+          await conn.rollback();
+          return res.status(400).json({ error: "Team todo is already completed." });
+        }
+        const [memberRows] = await conn.query(
+          "SELECT 1 FROM team_todo_members WHERE team_todo_id = ? AND user_id = ? LIMIT 1",
+          [teamTodoId, req.user.id]
+        );
+        const isMember = memberRows.length > 0;
+        const isAdmin = Number(req.user.role) >= MIN_ADMIN_ROLE_LEVEL;
+        if (!isMember && !isAdmin) {
+          await conn.rollback();
+          return res.status(403).json({ error: "Join the team todo first to complete it." });
+        }
+        await conn.query(
+          `UPDATE team_todos
+           SET status = 'completed',
+               completed_by_user_id = ?,
+               completed_at = NOW(),
+               completion_notes = ?
+           WHERE id = ?`,
+          [req.user.id, completionNotes || null, teamTodoId]
+        );
+        await conn.commit();
+        return res.json({ message: "Team todo completed." });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error completing team todo." });
+    }
+  });
 
   app.get("/team-todos/:id/members", userRateLimit, authenticateToken, async (req, res) => {
     const teamTodoId = Number.parseInt(req.params.id, 10);

@@ -7,7 +7,7 @@
 </head>
 <body class="todos-page">
   <div class="container">
-    <h1>🤝 Team Collaboration Board</h1>
+    <h1>🤝 Collaboration Board</h1>
     <div class="admin-top-actions">
       <button type="button" id="backToTodosBtn" class="back-to-todos-btn">⬅ Back to My Todos</button>
     </div>
@@ -18,7 +18,7 @@
             <tr>
               <th>Todo</th>
               <th>Difficulty</th>
-              <th>Team</th>
+            <th>Participants</th>
               <th>Messages</th>
               <th>Status</th>
               <th>Posted By</th>
@@ -30,7 +30,7 @@
       </div>
       <div class="team-chat-panel">
         <h3 id="teamChatTitle">Select a team todo</h3>
-        <p id="teamChatMeta" class="team-chat-meta">Join a team to start collaborating in chat.</p>
+      <p id="teamChatMeta" class="team-chat-meta">Join a todo (or start a solo one) to collaborate in chat.</p>
         <div id="teamMemberList" class="team-member-list"></div>
         <div id="teamMessageList" class="team-message-list"></div>
         <form id="teamMessageForm" class="team-message-form">
@@ -96,16 +96,22 @@
         const todoText = item.description
           ? `${escapeHtml(item.title)} — ${escapeHtml(item.description)}`
           : escapeHtml(item.title);
-        const statusText = isMember
-          ? "you joined"
-          : isFull
-            ? "team full"
-            : "open";
-        const actionHtml = isMember
-          ? "<em>Joined</em>"
-          : isFull
-            ? "<em>Full</em>"
-            : `<button class="action assign" data-action="join" data-team-todo-id="${item.id}">Join Team</button>`;
+        const isCompleted = String(item.status || "") === "completed";
+        const statusText = isCompleted
+          ? "completed"
+          : isMember
+            ? "you joined"
+            : isFull
+              ? "full"
+              : "open";
+        const isSolo = maxTeamSize === 1;
+        const actionHtml = isCompleted
+          ? "<em>Done</em>"
+          : isMember
+            ? `<button class="action approve" data-action="complete" data-team-todo-id="${item.id}">Complete</button>`
+            : isFull
+              ? "<em>Full</em>"
+              : `<button class="action assign" data-action="join" data-team-todo-id="${item.id}">${isSolo ? "Start Solo" : "Join Team"}</button>`;
         const selectedClass = Number(selectedTeamTodoId) === Number(item.id) ? "selected-team-row" : "";
         claimTeamTodoTable.innerHTML += `
           <tr class="${selectedClass}" data-team-todo-id="${item.id}">
@@ -195,7 +201,8 @@
         const memberCount = Number(selectedTeamTodo.member_count || 0);
         const maxTeamSize = Number(selectedTeamTodo.max_team_size || 3);
         const isMember = Number(selectedTeamTodo.current_user_is_member || 0) === 1;
-        teamChatMeta.textContent = `Team size: ${memberCount}/${maxTeamSize}${isMember ? " • You are a member" : " • Join to send/read messages"}`;
+         const isCompleted = String(selectedTeamTodo.status || "") === "completed";
+         teamChatMeta.textContent = `Participants: ${memberCount}/${maxTeamSize}${isMember ? " • You are a participant" : " • Join to send/read messages"}${isCompleted ? " • Completed" : ""}`;
         const [members, messages] = await Promise.all([
           fetchTeamMembers(teamTodoId),
           fetchTeamMessages(teamTodoId).catch((err) => {
@@ -208,6 +215,26 @@
       } catch (err) {
         teamChatTitle.textContent = "Select a team todo";
         teamChatMeta.textContent = err.message || "Unable to load team chat.";
+      }
+    }
+
+    async function completeTeamTodo(teamTodoId) {
+      const completionNotes = String(prompt("Optional completion notes:") || "").trim();
+      try {
+        const res = await fetch(`/team-todos/${teamTodoId}/complete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ completionNotes })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to complete team todo.");
+        await fetchTeamTodos();
+        await selectTeamTodo(teamTodoId);
+      } catch (err) {
+        alert(err.message);
       }
     }
 
@@ -243,6 +270,13 @@
         const teamTodoId = Number(joinButton.dataset.teamTodoId);
         if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
         joinTeamTodo(teamTodoId);
+        return;
+      }
+      const completeButton = event.target.closest("button[data-action='complete']");
+      if (completeButton) {
+        const teamTodoId = Number(completeButton.dataset.teamTodoId);
+        if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+        completeTeamTodo(teamTodoId);
         return;
       }
       const row = event.target.closest("tr[data-team-todo-id]");
