@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Approve Todos | Node Docker App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="admin-page">
+  <div class="container">
+    <h1>✅ Approve Todos</h1>
+    <div class="admin-top-actions">
+      <button type="button" id="backToAdminBtn" class="back-to-todos-btn">⬅ Back to Admin</button>
+      <button type="button" id="backToTodosBtn" class="back-to-todos-btn">📝 My Todos</button>
+    </div>
+    <p id="approveInfo"></p>
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Todo</th>
+          <th>How it was done</th>
+          <th>Difficulty</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="pendingApprovalsTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    const backToAdminBtn = document.getElementById("backToAdminBtn");
+    const backToTodosBtn = document.getElementById("backToTodosBtn");
+    const approveInfo = document.getElementById("approveInfo");
+    const pendingApprovalsTable = document.getElementById("pendingApprovalsTable");
+    const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+    const MIN_ADMIN_ROLE_LEVEL = 4;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    if (!token) window.location.href = "login.html";
+    let decoded = null;
+    try {
+      decoded = JSON.parse(atob(token.split(".")[1]));
+    } catch {
+      localStorage.removeItem("token");
+      window.location.href = "login.html";
+    }
+    if (!decoded || Number(decoded.role) < MIN_ADMIN_ROLE_LEVEL) {
+      window.location.href = "todos.html";
+    }
+
+    backToAdminBtn.addEventListener("click", () => {
+      window.location.href = "admin.html";
+    });
+    backToTodosBtn.addEventListener("click", () => {
+      window.location.href = "todos.html";
+    });
+
+    async function fetchPendingApprovals() {
+      try {
+        const res = await fetch("/admin/pending-approvals", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data.error || "Failed to load pending approvals.");
+        renderPendingApprovals(data);
+        approveInfo.textContent = `Logged in as ${decoded.username}. Review pending completion requests below.`;
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function renderPendingApprovals(items) {
+      pendingApprovalsTable.innerHTML = "";
+      if (!items.length) {
+        pendingApprovalsTable.innerHTML = `<tr><td colspan="5"><em>No pending approvals.</em></td></tr>`;
+        return;
+      }
+      items.forEach((item) => {
+        pendingApprovalsTable.innerHTML += `
+          <tr>
+            <td>${escapeHtml(item.username)}</td>
+            <td>${escapeHtml(item.title)}</td>
+            <td>${escapeHtml(item.completion_notes || "No description provided.")}</td>
+            <td>
+              <select id="approveDifficulty-${item.id}">
+                ${TODO_DIFFICULTIES.map((difficulty) => `<option value="${difficulty}" ${difficulty === (item.difficulty || "easy") ? "selected" : ""}>${difficulty}</option>`).join("")}
+              </select>
+            </td>
+            <td>
+              <button class="action approve" data-action="approve" data-todo-id="${item.id}">Approve</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function approveTodo(todoId) {
+      const difficultyInput = document.getElementById(`approveDifficulty-${todoId}`);
+      const difficulty = String(difficultyInput?.value || "").trim().toLowerCase();
+      if (!TODO_DIFFICULTIES.includes(difficulty)) {
+        alert("Choose a valid difficulty.");
+        return;
+      }
+      if (!confirm("Approve this completion request?")) return;
+      try {
+        const res = await fetch(`/admin/todos/${todoId}/approve`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ difficulty })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to approve todo.");
+        alert(`Approved (${data.difficulty || difficulty}).`);
+        fetchPendingApprovals();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    pendingApprovalsTable.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action='approve']");
+      if (!button) return;
+      const todoId = Number(button.dataset.todoId);
+      if (!Number.isInteger(todoId) || todoId <= 0) return;
+      approveTodo(todoId);
+    });
+
+    fetchPendingApprovals();
+  </script>
+  <script src="profile-menu.js"></script>
+</body>
+</html>
