@@ -1,10 +1,22 @@
 const { TODO_DIFFICULTY_XP } = require("../config");
 const { normalizeDifficulty } = require("./todo");
 
+/**
+ * Returns the XP required to advance from the given level to the next.
+ * @param {number} level
+ * @returns {number}
+ */
 function getRequiredXpForLevel(level) {
   return Math.max(10, Number(level) * 10);
 }
 
+/**
+ * Applies gained XP to a user's current XP/level, advancing levels as needed.
+ * @param {number} currentXp
+ * @param {number} currentLevel
+ * @param {number} gainedXp
+ * @returns {{ xp: number, level: number }}
+ */
 function applyXpProgression(currentXp, currentLevel, gainedXp) {
   let xp = Number(currentXp) + Number(gainedXp);
   let level = Math.max(1, Number(currentLevel) || 1);
