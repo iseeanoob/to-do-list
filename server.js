@@ -651,6 +651,8 @@ const userRateLimit = rateLimit({
             setClauses.push("completed = FALSE");
             setClauses.push("completion_requested = FALSE");
             setClauses.push("completion_notes = NULL");
+            setClauses.push("completion_reviewed_by_user_id = NULL");
+            setClauses.push("completion_reviewed_at = NULL");
           }
         }
         if (hasDifficulty) {
