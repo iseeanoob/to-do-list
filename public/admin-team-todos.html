@@ -22,6 +22,7 @@
         <option value="hard">hard</option>
         <option value="insane">insane</option>
       </select>
+      <input type="number" id="teamTodoMaxTeamSizeInput" min="2" max="20" value="3" />
       <button type="submit">Create team todo</button>
     </form>
 
@@ -31,8 +32,10 @@
           <th>Todo</th>
           <th>Difficulty</th>
           <th>Status</th>
+          <th>Team</th>
+          <th>Messages</th>
           <th>Created By</th>
-          <th>Claimed By</th>
+          <th>Started By</th>
         </tr>
       </thead>
       <tbody id="teamTodoTable"></tbody>
@@ -43,12 +46,14 @@
     const token = localStorage.getItem("token");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+    const TEAM_TODO_COLUMN_COUNT = 7;
     const backToAdminBtn = document.getElementById("backToAdminBtn");
     const openClaimPageBtn = document.getElementById("openClaimPageBtn");
     const teamTodoForm = document.getElementById("teamTodoForm");
     const teamTodoTitleInput = document.getElementById("teamTodoTitleInput");
     const teamTodoDescriptionInput = document.getElementById("teamTodoDescriptionInput");
     const teamTodoDifficultyInput = document.getElementById("teamTodoDifficultyInput");
+    const teamTodoMaxTeamSizeInput = document.getElementById("teamTodoMaxTeamSizeInput");
     const teamTodoTable = document.getElementById("teamTodoTable");
 
     function escapeHtml(value) {
@@ -95,21 +100,26 @@
     function renderTeamTodos(items) {
       teamTodoTable.innerHTML = "";
       if (!items.length) {
-        teamTodoTable.innerHTML = `<tr><td colspan="5"><em>No team todos yet.</em></td></tr>`;
+        teamTodoTable.innerHTML = `<tr><td colspan="${TEAM_TODO_COLUMN_COUNT}"><em>No team todos yet.</em></td></tr>`;
         return;
       }
       items.forEach((item) => {
         const todoText = item.description
           ? `${escapeHtml(item.title)} — ${escapeHtml(item.description)}`
           : escapeHtml(item.title);
+        const memberCount = Number(item.member_count || 0);
+        const maxTeamSize = Number(item.max_team_size || 3);
         const claimedBy = item.claimed_by_username
           ? `${escapeHtml(item.claimed_by_username)}${item.claimed_todo_id ? ` (todo #${item.claimed_todo_id})` : ""}`
           : "-";
+        const statusText = memberCount > 0 ? "in progress" : "open";
         teamTodoTable.innerHTML += `
           <tr>
             <td>${todoText}</td>
             <td>${escapeHtml(item.difficulty || "easy")}</td>
-            <td>${escapeHtml(item.status || "open")}</td>
+            <td>${escapeHtml(statusText)}</td>
+            <td>${memberCount} / ${maxTeamSize}</td>
+            <td>${Number(item.message_count || 0)}</td>
             <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
             <td>${claimedBy}</td>
           </tr>
@@ -122,9 +132,14 @@
       const title = teamTodoTitleInput.value.trim();
       const description = teamTodoDescriptionInput.value.trim();
       const difficulty = String(teamTodoDifficultyInput.value || "").trim().toLowerCase();
+      const maxTeamSize = Number.parseInt(teamTodoMaxTeamSizeInput.value, 10);
       if (!title) return;
       if (!TODO_DIFFICULTIES.includes(difficulty)) {
         alert("Choose a valid difficulty.");
+        return;
+      }
+      if (!Number.isInteger(maxTeamSize) || maxTeamSize < 2 || maxTeamSize > 20) {
+        alert("Max team size must be between 2 and 20.");
         return;
       }
       try {
@@ -134,13 +149,14 @@
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ title, description, difficulty })
+          body: JSON.stringify({ title, description, difficulty, maxTeamSize })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to create team todo.");
         teamTodoTitleInput.value = "";
         teamTodoDescriptionInput.value = "";
         teamTodoDifficultyInput.value = "easy";
+        teamTodoMaxTeamSizeInput.value = "3";
         fetchTeamTodos();
       } catch (err) {
         alert(err.message);
