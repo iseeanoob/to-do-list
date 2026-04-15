@@ -43,6 +43,7 @@
 
   <script>
     const token = localStorage.getItem("token");
+    const TEAM_TODO_COLUMN_COUNT = 7;
     const backToTodosBtn = document.getElementById("backToTodosBtn");
     const claimTeamTodoTable = document.getElementById("claimTeamTodoTable");
     const teamChatTitle = document.getElementById("teamChatTitle");
@@ -84,7 +85,7 @@
     function renderTeamTodos(items) {
       claimTeamTodoTable.innerHTML = "";
       if (!items.length) {
-        claimTeamTodoTable.innerHTML = `<tr><td colspan="7"><em>No team todos posted yet.</em></td></tr>`;
+        claimTeamTodoTable.innerHTML = `<tr><td colspan="${TEAM_TODO_COLUMN_COUNT}"><em>No team todos posted yet.</em></td></tr>`;
         return;
       }
       items.forEach((item) => {

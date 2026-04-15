@@ -388,6 +388,22 @@ const TODO_DEFAULT_COMPLETION_REQUESTED = false;
     return parsed >= 2 && parsed <= 20 ? parsed : null;
   }
 
+  async function ensureTeamTodoMessagingAccess(teamTodoId, user) {
+    const [todoRows] = await pool.query("SELECT id FROM team_todos WHERE id = ? LIMIT 1", [teamTodoId]);
+    if (todoRows.length === 0) {
+      return { ok: false, status: 404, error: "Team todo not found." };
+    }
+
+    const [membershipRows] = await pool.query(
+      "SELECT 1 FROM team_todo_members WHERE team_todo_id = ? AND user_id = ? LIMIT 1",
+      [teamTodoId, user.id]
+    );
+    if (membershipRows.length === 0 && Number(user.role) < MIN_ADMIN_ROLE_LEVEL) {
+      return { ok: false, status: 403, error: "Join the team todo first to access messages." };
+    }
+    return { ok: true };
+  }
+
 function getRequiredXpForLevel(level) {
   return Math.max(10, Number(level) * 10);
 }
@@ -1446,16 +1462,8 @@ const userRateLimit = rateLimit({
       return res.status(400).json({ error: "Invalid team todo id." });
     }
     try {
-      const [todoRows] = await pool.query("SELECT id FROM team_todos WHERE id = ? LIMIT 1", [teamTodoId]);
-      if (todoRows.length === 0) return res.status(404).json({ error: "Team todo not found." });
-
-      const [membershipRows] = await pool.query(
-        "SELECT 1 FROM team_todo_members WHERE team_todo_id = ? AND user_id = ? LIMIT 1",
-        [teamTodoId, req.user.id]
-      );
-      if (membershipRows.length === 0 && Number(req.user.role) < MIN_ADMIN_ROLE_LEVEL) {
-        return res.status(403).json({ error: "Join the team todo first to read messages." });
-      }
+      const access = await ensureTeamTodoMessagingAccess(teamTodoId, req.user);
+      if (!access.ok) return res.status(access.status).json({ error: access.error });
 
       const [rows] = await pool.query(
         `SELECT tmsg.id, tmsg.message, tmsg.created_at, tmsg.user_id, u.username
@@ -1484,16 +1492,8 @@ const userRateLimit = rateLimit({
       return res.status(400).json({ error: `Message must be ${MAX_TEAM_MESSAGE_LENGTH} characters or less.` });
     }
     try {
-      const [todoRows] = await pool.query("SELECT id FROM team_todos WHERE id = ? LIMIT 1", [teamTodoId]);
-      if (todoRows.length === 0) return res.status(404).json({ error: "Team todo not found." });
-
-      const [membershipRows] = await pool.query(
-        "SELECT 1 FROM team_todo_members WHERE team_todo_id = ? AND user_id = ? LIMIT 1",
-        [teamTodoId, req.user.id]
-      );
-      if (membershipRows.length === 0 && Number(req.user.role) < MIN_ADMIN_ROLE_LEVEL) {
-        return res.status(403).json({ error: "Join the team todo first to send messages." });
-      }
+      const access = await ensureTeamTodoMessagingAccess(teamTodoId, req.user);
+      if (!access.ok) return res.status(access.status).json({ error: access.error });
 
       const [result] = await pool.query(
         "INSERT INTO team_todo_messages (team_todo_id, user_id, message) VALUES (?, ?, ?)",

@@ -46,6 +46,7 @@
     const token = localStorage.getItem("token");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+    const TEAM_TODO_COLUMN_COUNT = 7;
     const backToAdminBtn = document.getElementById("backToAdminBtn");
     const openClaimPageBtn = document.getElementById("openClaimPageBtn");
     const teamTodoForm = document.getElementById("teamTodoForm");
@@ -99,7 +100,7 @@
     function renderTeamTodos(items) {
       teamTodoTable.innerHTML = "";
       if (!items.length) {
-        teamTodoTable.innerHTML = `<tr><td colspan="7"><em>No team todos yet.</em></td></tr>`;
+        teamTodoTable.innerHTML = `<tr><td colspan="${TEAM_TODO_COLUMN_COUNT}"><em>No team todos yet.</em></td></tr>`;
         return;
       }
       items.forEach((item) => {
