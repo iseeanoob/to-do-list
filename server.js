@@ -1048,11 +1048,11 @@ const userRateLimit = rateLimit({
           `SELECT
              t.id,
              t.user_id,
-              t.completed,
-              t.completion_requested,
-              t.completion_notes,
-              t.difficulty,
-              t.xp_awarded,
+             t.completed,
+             t.completion_requested,
+             t.completion_notes,
+             t.difficulty,
+             t.xp_awarded,
              u.role AS user_role,
              u.xp AS user_xp,
              u.level AS user_level
@@ -1086,13 +1086,13 @@ const userRateLimit = rateLimit({
         const effectiveDifficulty = difficulty || todo.difficulty;
         await conn.query(
           `UPDATE todos
-            SET completed = TRUE,
-                completion_requested = FALSE,
-                difficulty = ?,
-                completion_reviewed_by_user_id = ?,
-                completion_reviewed_at = NOW(),
-                xp_awarded = CASE WHEN xp_awarded = TRUE THEN TRUE ELSE ? END
-            WHERE id = ?`,
+           SET completed = TRUE,
+               completion_requested = FALSE,
+               difficulty = ?,
+               completion_reviewed_by_user_id = ?,
+               completion_reviewed_at = NOW(),
+               xp_awarded = CASE WHEN xp_awarded = TRUE THEN TRUE ELSE ? END
+           WHERE id = ?`,
           [effectiveDifficulty, req.user.id, shouldAwardXp, todoId]
         );
 
