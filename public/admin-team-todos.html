@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Team Todos | Node Docker App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="admin-page">
+  <div class="container">
+    <h1>📋 Team Todo Board (Admin)</h1>
+    <div class="admin-top-actions">
+      <button type="button" id="backToAdminBtn" class="back-to-todos-btn">⬅ Back to Admin</button>
+      <button type="button" id="openClaimPageBtn" class="back-to-todos-btn">🙋 Open Claim Page</button>
+    </div>
+
+    <form id="teamTodoForm">
+      <input type="text" id="teamTodoTitleInput" placeholder="Todo title..." required />
+      <input type="text" id="teamTodoDescriptionInput" placeholder="Optional details..." />
+      <select id="teamTodoDifficultyInput">
+        <option value="easy">easy</option>
+        <option value="medium">medium</option>
+        <option value="hard">hard</option>
+        <option value="insane">insane</option>
+      </select>
+      <button type="submit">Create team todo</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Todo</th>
+          <th>Difficulty</th>
+          <th>Status</th>
+          <th>Created By</th>
+          <th>Claimed By</th>
+        </tr>
+      </thead>
+      <tbody id="teamTodoTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    const MIN_ADMIN_ROLE_LEVEL = 4;
+    const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
+    const backToAdminBtn = document.getElementById("backToAdminBtn");
+    const openClaimPageBtn = document.getElementById("openClaimPageBtn");
+    const teamTodoForm = document.getElementById("teamTodoForm");
+    const teamTodoTitleInput = document.getElementById("teamTodoTitleInput");
+    const teamTodoDescriptionInput = document.getElementById("teamTodoDescriptionInput");
+    const teamTodoDifficultyInput = document.getElementById("teamTodoDifficultyInput");
+    const teamTodoTable = document.getElementById("teamTodoTable");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    if (!token) window.location.href = "login.html";
+    let decoded = null;
+    try {
+      decoded = JSON.parse(atob(token.split(".")[1]));
+    } catch {
+      localStorage.removeItem("token");
+      window.location.href = "login.html";
+    }
+    if (!decoded || Number(decoded.role) < MIN_ADMIN_ROLE_LEVEL) {
+      window.location.href = "todos.html";
+    }
+
+    backToAdminBtn.addEventListener("click", () => {
+      window.location.href = "admin.html";
+    });
+    openClaimPageBtn.addEventListener("click", () => {
+      window.location.href = "claim-todos.html";
+    });
+
+    async function fetchTeamTodos() {
+      try {
+        const res = await fetch("/admin/team-todos", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data.error || "Failed to load team todos.");
+        renderTeamTodos(data);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function renderTeamTodos(items) {
+      teamTodoTable.innerHTML = "";
+      if (!items.length) {
+        teamTodoTable.innerHTML = `<tr><td colspan="5"><em>No team todos yet.</em></td></tr>`;
+        return;
+      }
+      items.forEach((item) => {
+        const todoText = item.description
+          ? `${escapeHtml(item.title)} — ${escapeHtml(item.description)}`
+          : escapeHtml(item.title);
+        const claimedBy = item.claimed_by_username
+          ? `${escapeHtml(item.claimed_by_username)}${item.claimed_todo_id ? ` (todo #${item.claimed_todo_id})` : ""}`
+          : "-";
+        teamTodoTable.innerHTML += `
+          <tr>
+            <td>${todoText}</td>
+            <td>${escapeHtml(item.difficulty || "easy")}</td>
+            <td>${escapeHtml(item.status || "open")}</td>
+            <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
+            <td>${claimedBy}</td>
+          </tr>
+        `;
+      });
+    }
+
+    teamTodoForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const title = teamTodoTitleInput.value.trim();
+      const description = teamTodoDescriptionInput.value.trim();
+      const difficulty = String(teamTodoDifficultyInput.value || "").trim().toLowerCase();
+      if (!title) return;
+      if (!TODO_DIFFICULTIES.includes(difficulty)) {
+        alert("Choose a valid difficulty.");
+        return;
+      }
+      try {
+        const res = await fetch("/admin/team-todos", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ title, description, difficulty })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to create team todo.");
+        teamTodoTitleInput.value = "";
+        teamTodoDescriptionInput.value = "";
+        teamTodoDifficultyInput.value = "easy";
+        fetchTeamTodos();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    fetchTeamTodos();
+  </script>
+  <script src="profile-menu.js"></script>
+</body>
+</html>

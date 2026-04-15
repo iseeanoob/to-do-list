@@ -10,6 +10,8 @@
   <h1>🛠 Admin Panel</h1>
   <div class="admin-top-actions">
     <button type="button" id="backToTodosBtn" class="back-to-todos-btn">⬅ Back to Todos</button>
+    <button type="button" id="goToApprovePageBtn" class="back-to-todos-btn">✅ Approve Todos</button>
+    <button type="button" id="goToAdminTeamTodosBtn" class="back-to-todos-btn">📋 Team Todo Board</button>
   </div>
   <p id="adminInfo"></p>
   <table>
@@ -45,12 +47,20 @@
   const adminInfo = document.getElementById("adminInfo");
   const todoRequestsTable = document.getElementById("todoRequestsTable");
   const backToTodosBtn = document.getElementById("backToTodosBtn");
+  const goToApprovePageBtn = document.getElementById("goToApprovePageBtn");
+  const goToAdminTeamTodosBtn = document.getElementById("goToAdminTeamTodosBtn");
   const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
   const TODO_REQUESTS_COLUMN_COUNT = 4;
 
   if (!token) window.location.href = "login.html";
   backToTodosBtn.addEventListener("click", () => {
     window.location.href = "todos.html";
+  });
+  goToApprovePageBtn.addEventListener("click", () => {
+    window.location.href = "approve.html";
+  });
+  goToAdminTeamTodosBtn.addEventListener("click", () => {
+    window.location.href = "admin-team-todos.html";
   });
 
   const ROLES = {1: "User", 2: "Moderator", 3: "Manager", 4: "Admin", 5: "Superadmin"};

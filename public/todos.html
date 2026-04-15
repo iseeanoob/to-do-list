@@ -17,7 +17,7 @@
   </div>
   <div class="container">
     <h1>📝 My Todos</h1>
-    <p>Click a todo to request completion, or use the icon to remove it.</p>
+    <p>Click a todo to request completion (with notes), or use the icon to remove it.</p>
 
     <form id="todoForm">
       <input type="text" id="todoInput" placeholder="New todo..." required />
@@ -31,6 +31,9 @@
     </form>
     <div id="adminNavWrap" style="display: none;">
       <button type="button" id="goToAdminBtn">Go to Admin Panel</button>
+    </div>
+    <div id="claimNavWrap">
+      <button type="button" id="goToClaimTodosBtn">Claim Team Todos</button>
     </div>
 
     <h3>Unfinished</h3>
@@ -73,6 +76,8 @@
     const errorMsg = document.getElementById("errorMsg");
     const adminNavWrap = document.getElementById("adminNavWrap");
     const goToAdminBtn = document.getElementById("goToAdminBtn");
+    const claimNavWrap = document.getElementById("claimNavWrap");
+    const goToClaimTodosBtn = document.getElementById("goToClaimTodosBtn");
     const levelLabel = document.getElementById("levelLabel");
     const xpLabel = document.getElementById("xpLabel");
     const xpProgressFill = document.getElementById("xpProgressFill");
@@ -100,6 +105,10 @@
         window.location.href = "admin.html";
       });
     }
+    claimNavWrap.style.display = "block";
+    goToClaimTodosBtn.addEventListener("click", () => {
+      window.location.href = "claim-todos.html";
+    });
 
     function renderProgress(profile) {
       const level = Math.max(1, Number(profile?.level) || 1);
@@ -185,12 +194,17 @@
           : todo.completion_requested
             ? "Awaiting approval"
             : "Open";
-        li.textContent = `${todo.title} (${difficulty}, ${assignedByText}, ${statusText})`;
+        const completionNotes = String(todo.completion_notes || "").trim();
+        const completionNotesSuffix = completionNotes ? `, Notes: ${completionNotes}` : "";
+        li.textContent = `${todo.title} (${difficulty}, ${assignedByText}, ${statusText}${completionNotesSuffix})`;
         li.style.textDecoration = todo.completed ? "line-through" : "none";
 
         // Toggle complete
         li.addEventListener("click", async () => {
           const desiredCompleted = !todo.completed && !todo.completion_requested;
+          const completionNotes = desiredCompleted
+            ? String(prompt("How did you do it? (optional)") || "").trim()
+            : "";
           try {
             const updateRes = await fetch(`/todos/${todo.id}`, {
               method: "PUT",
@@ -198,7 +212,7 @@
                 "Content-Type": "application/json",
                 Authorization: "Bearer " + token
               },
-              body: JSON.stringify({ title: todo.title, completed: desiredCompleted })
+              body: JSON.stringify({ title: todo.title, completed: desiredCompleted, completionNotes })
             });
             if (!updateRes.ok) {
               const errData = await updateRes.json().catch(() => ({}));

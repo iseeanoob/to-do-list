@@ -14,6 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 // 2,000,000 chars keeps profile images practical while staying below MEDIUMTEXT capacity.
 const MAX_DATA_URL_LENGTH = 2000000;
 const MAX_PROFILE_URL_LENGTH = 2048;
+const MAX_COMPLETION_NOTES_LENGTH = 2000;
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || "db",
@@ -55,6 +56,9 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           title VARCHAR(255) NOT NULL,
           completed BOOLEAN DEFAULT FALSE,
           completion_requested BOOLEAN NOT NULL DEFAULT FALSE,
+          completion_notes TEXT DEFAULT NULL,
+          completion_reviewed_by_user_id INT DEFAULT NULL,
+          completion_reviewed_at TIMESTAMP NULL DEFAULT NULL,
           difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy',
           xp_awarded BOOLEAN NOT NULL DEFAULT FALSE,
           assigned_by_user_id INT DEFAULT NULL,
@@ -76,6 +80,22 @@ async function connectWithRetry(retries = 10, delay = 5000) {
           handled_at TIMESTAMP NULL DEFAULT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS team_todos (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          description TEXT DEFAULT NULL,
+          difficulty ENUM('easy', 'medium', 'hard', 'insane') NOT NULL DEFAULT 'easy',
+          status ENUM('open', 'claimed') NOT NULL DEFAULT 'open',
+          created_by_user_id INT NOT NULL,
+          created_by_role INT NOT NULL,
+          claimed_by_user_id INT DEFAULT NULL,
+          claimed_todo_id INT DEFAULT NULL,
+          claimed_at TIMESTAMP NULL DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `);
 
@@ -150,6 +170,36 @@ async function connectWithRetry(retries = 10, delay = 5000) {
       );
       if (todosCompletionRequestedColumn.length === 0) {
         await conn.query("ALTER TABLE todos ADD COLUMN completion_requested BOOLEAN NOT NULL DEFAULT FALSE");
+      }
+      const [todosCompletionNotesColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'completion_notes'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosCompletionNotesColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN completion_notes TEXT DEFAULT NULL");
+      }
+      const [todosCompletionReviewedByColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'completion_reviewed_by_user_id'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosCompletionReviewedByColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN completion_reviewed_by_user_id INT DEFAULT NULL");
+      }
+      const [todosCompletionReviewedAtColumn] = await conn.query(
+        `SELECT 1
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'todos' AND COLUMN_NAME = 'completion_reviewed_at'
+         LIMIT 1`,
+        [DB_CONFIG.database]
+      );
+      if (todosCompletionReviewedAtColumn.length === 0) {
+        await conn.query("ALTER TABLE todos ADD COLUMN completion_reviewed_at TIMESTAMP NULL DEFAULT NULL");
       }
 
       const [usersXpColumn] = await conn.query(
@@ -425,7 +475,7 @@ const userRateLimit = rateLimit({
   app.get("/todos", authenticateToken, async (req, res) => {
     try {
       const [rows] = await pool.query(
-        "SELECT id, user_id, title, completed, completion_requested, difficulty, assigned_by_user_id, assigned_by_role, created_at FROM todos WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, user_id, title, completed, completion_requested, completion_notes, difficulty, assigned_by_user_id, assigned_by_role, created_at FROM todos WHERE user_id = ? ORDER BY created_at DESC",
         [req.user.id]
       );
       res.json(rows);
@@ -533,18 +583,23 @@ const userRateLimit = rateLimit({
     const hasCompleted = typeof req.body?.completed === "boolean";
     const hasDifficulty = typeof req.body?.difficulty === "string";
     const difficulty = hasDifficulty ? normalizeDifficulty(req.body?.difficulty) : null;
+    const hasCompletionNotes = typeof req.body?.completionNotes === "string";
+    const completionNotes = hasCompletionNotes ? String(req.body.completionNotes || "").trim() : "";
 
     if (!Number.isInteger(todoId) || todoId <= 0) {
       return res.status(400).json({ error: "Invalid todo id." });
     }
-    if (!hasTitle && !hasCompleted && !hasDifficulty) {
-      return res.status(400).json({ error: "Provide title, completed status, and/or difficulty." });
+    if (!hasTitle && !hasCompleted && !hasDifficulty && !hasCompletionNotes) {
+      return res.status(400).json({ error: "Provide title, completed status, difficulty, and/or completion notes." });
     }
     if (hasTitle && !title) {
       return res.status(400).json({ error: "Title cannot be empty." });
     }
     if (hasDifficulty && !difficulty) {
       return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
+    }
+    if (hasCompletionNotes && completionNotes.length > MAX_COMPLETION_NOTES_LENGTH) {
+      return res.status(400).json({ error: `Completion notes must be ${MAX_COMPLETION_NOTES_LENGTH} characters or less.` });
     }
 
     try {
@@ -557,6 +612,7 @@ const userRateLimit = rateLimit({
              id,
              completed,
              completion_requested,
+             completion_notes,
              difficulty,
              xp_awarded,
              assigned_by_user_id,
@@ -583,11 +639,20 @@ const userRateLimit = rateLimit({
           if (req.body.completed === true) {
             if (!Boolean(todo.completed)) {
               setClauses.push("completion_requested = TRUE");
+              if (hasCompletionNotes) {
+                setClauses.push("completion_notes = ?");
+                params.push(completionNotes || null);
+              }
             }
           } else {
             setClauses.push("completed = FALSE");
             setClauses.push("completion_requested = FALSE");
+            setClauses.push("completion_notes = NULL");
           }
+        }
+        if (hasCompletionNotes && !hasCompleted) {
+          await conn.rollback();
+          return res.status(400).json({ error: "Completion notes can only be set while requesting completion." });
         }
         if (hasDifficulty) {
           const assignedByAdmin = Number(todo.assigned_by_role) >= MIN_ADMIN_ROLE_LEVEL;
@@ -843,6 +908,32 @@ const userRateLimit = rateLimit({
     }
   });
 
+  app.get("/admin/pending-approvals", adminRateLimit, requireRank(4), async (req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           t.id,
+           t.user_id,
+           t.title,
+           t.difficulty,
+           t.completion_notes,
+           t.created_at,
+           u.username,
+           u.role AS user_role
+         FROM todos t
+         INNER JOIN users u ON u.id = t.user_id
+         WHERE t.completion_requested = TRUE
+           AND t.completed = FALSE
+         ORDER BY t.created_at DESC`
+      );
+      const visible = rows.filter((row) => canAssignTodo(req.user.role, row.user_role));
+      res.json(visible);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error fetching pending approvals." });
+    }
+  });
+
   app.post("/admin/todo-requests/:id/distribute", adminRateLimit, requireRank(4), async (req, res) => {
     const requestId = Number.parseInt(req.params.id, 10);
     const targetUserId = Number.parseInt(req.body?.targetUserId, 10);
@@ -939,8 +1030,13 @@ const userRateLimit = rateLimit({
   // ✅ Approve pending todo completion (admin/superadmin)
   app.put("/admin/todos/:id/approve", adminRateLimit, requireRank(4), async (req, res) => {
     const todoId = Number.parseInt(req.params.id, 10);
+    const hasDifficulty = typeof req.body?.difficulty === "string";
+    const difficulty = hasDifficulty ? normalizeDifficulty(req.body?.difficulty) : null;
     if (!Number.isInteger(todoId) || todoId <= 0) {
       return res.status(400).json({ error: "Invalid todo id." });
+    }
+    if (hasDifficulty && !difficulty) {
+      return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
     }
 
     try {
@@ -952,10 +1048,11 @@ const userRateLimit = rateLimit({
           `SELECT
              t.id,
              t.user_id,
-             t.completed,
-             t.completion_requested,
-             t.difficulty,
-             t.xp_awarded,
+              t.completed,
+              t.completion_requested,
+              t.completion_notes,
+              t.difficulty,
+              t.xp_awarded,
              u.role AS user_role,
              u.xp AS user_xp,
              u.level AS user_level
@@ -986,19 +1083,23 @@ const userRateLimit = rateLimit({
         }
 
         const shouldAwardXp = !Boolean(todo.xp_awarded);
+        const effectiveDifficulty = difficulty || todo.difficulty;
         await conn.query(
           `UPDATE todos
-           SET completed = TRUE,
-               completion_requested = FALSE,
-               xp_awarded = CASE WHEN xp_awarded = TRUE THEN TRUE ELSE ? END
-           WHERE id = ?`,
-          [shouldAwardXp, todoId]
+            SET completed = TRUE,
+                completion_requested = FALSE,
+                difficulty = ?,
+                completion_reviewed_by_user_id = ?,
+                completion_reviewed_at = NOW(),
+                xp_awarded = CASE WHEN xp_awarded = TRUE THEN TRUE ELSE ? END
+            WHERE id = ?`,
+          [effectiveDifficulty, req.user.id, shouldAwardXp, todoId]
         );
 
         let progression = null;
         let xpGained = 0;
         if (shouldAwardXp) {
-          xpGained = TODO_DIFFICULTY_XP[todo.difficulty];
+          xpGained = TODO_DIFFICULTY_XP[effectiveDifficulty];
           progression = applyXpProgression(todo.user_xp, todo.user_level, xpGained);
           await conn.query("UPDATE users SET xp = ?, level = ? WHERE id = ?", [
             progression.xp,
@@ -1010,6 +1111,7 @@ const userRateLimit = rateLimit({
         await conn.commit();
         return res.json({
           message: "Todo completion approved.",
+          difficulty: effectiveDifficulty,
           xpGained,
           xp: progression ? progression.xp : undefined,
           level: progression ? progression.level : undefined,
@@ -1067,6 +1169,150 @@ const userRateLimit = rateLimit({
       res.json({ message: "User deleted successfully." });
     } catch {
       res.status(500).json({ error: "Error deleting user." });
+    }
+  });
+
+  app.get("/team-todos", userRateLimit, authenticateToken, async (req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           tt.id,
+           tt.title,
+           tt.description,
+           tt.difficulty,
+           tt.status,
+           tt.created_by_user_id,
+           creator.username AS created_by_username,
+           tt.claimed_by_user_id,
+           claimer.username AS claimed_by_username,
+           tt.claimed_todo_id,
+           tt.claimed_at,
+           tt.created_at
+         FROM team_todos tt
+         INNER JOIN users creator ON creator.id = tt.created_by_user_id
+         LEFT JOIN users claimer ON claimer.id = tt.claimed_by_user_id
+         ORDER BY (tt.status = 'open') DESC, tt.created_at DESC`
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error fetching team todos." });
+    }
+  });
+
+  app.post("/admin/team-todos", adminRateLimit, requireRank(4), async (req, res) => {
+    const title = String(req.body?.title || "").trim();
+    const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
+    const difficulty = normalizeDifficulty(req.body?.difficulty);
+    if (!title) return res.status(400).json({ error: "Title required." });
+    if (!difficulty) return res.status(400).json({ error: "Difficulty must be easy, medium, hard, or insane." });
+
+    try {
+      const [result] = await pool.query(
+        "INSERT INTO team_todos (title, description, difficulty, created_by_user_id, created_by_role) VALUES (?, ?, ?, ?, ?)",
+        [title, description || null, difficulty, req.user.id, req.user.role]
+      );
+      res.json({
+        message: "Team todo created.",
+        teamTodo: {
+          id: result.insertId,
+          title,
+          description: description || null,
+          difficulty,
+          status: "open",
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error creating team todo." });
+    }
+  });
+
+  app.get("/admin/team-todos", adminRateLimit, requireRank(4), async (req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           tt.id,
+           tt.title,
+           tt.description,
+           tt.difficulty,
+           tt.status,
+           tt.created_by_user_id,
+           creator.username AS created_by_username,
+           tt.claimed_by_user_id,
+           claimer.username AS claimed_by_username,
+           tt.claimed_todo_id,
+           tt.claimed_at,
+           tt.created_at
+         FROM team_todos tt
+         INNER JOIN users creator ON creator.id = tt.created_by_user_id
+         LEFT JOIN users claimer ON claimer.id = tt.claimed_by_user_id
+         ORDER BY tt.created_at DESC`
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error fetching team todos." });
+    }
+  });
+
+  app.post("/team-todos/:id/claim", userRateLimit, authenticateToken, async (req, res) => {
+    const teamTodoId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) {
+      return res.status(400).json({ error: "Invalid team todo id." });
+    }
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [rows] = await conn.query(
+          `SELECT id, title, difficulty, status, created_by_user_id, created_by_role
+           FROM team_todos
+           WHERE id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [teamTodoId]
+        );
+        if (rows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Team todo not found." });
+        }
+        const teamTodo = rows[0];
+        if (teamTodo.status !== "open") {
+          await conn.rollback();
+          return res.status(400).json({ error: "Team todo has already been claimed." });
+        }
+        const [todoResult] = await conn.query(
+          "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
+          [req.user.id, teamTodo.title, teamTodo.difficulty, teamTodo.created_by_user_id, teamTodo.created_by_role]
+        );
+        await conn.query(
+          `UPDATE team_todos
+           SET status = 'claimed',
+               claimed_by_user_id = ?,
+               claimed_todo_id = ?,
+               claimed_at = NOW()
+           WHERE id = ?`,
+          [req.user.id, todoResult.insertId, teamTodoId]
+        );
+        await conn.commit();
+        return res.json({
+          message: "Team todo claimed successfully.",
+          todo: {
+            id: todoResult.insertId,
+            title: teamTodo.title,
+            difficulty: teamTodo.difficulty,
+          },
+        });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error claiming team todo." });
     }
   });
 

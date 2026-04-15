@@ -245,6 +245,7 @@ body.todos-page {
 #todoForm button,
 #todoRequestForm button,
 #adminNavWrap button,
+#claimNavWrap button,
 #todoListUnfinished button,
 #todoListPendingApproval button,
 #todoListFinished button {
@@ -254,6 +255,28 @@ body.todos-page {
 
 body.todos-page #adminNavWrap {
   margin: 10px 0 18px;
+}
+
+body.todos-page #claimNavWrap {
+  margin: 10px 0 18px;
+}
+
+#teamTodoForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 140px auto;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 18px;
+}
+
+#teamTodoForm input,
+#teamTodoForm select {
+  margin: 0;
+}
+
+#teamTodoForm button {
+  width: auto;
+  margin: 0;
 }
 
 #todoListUnfinished,
@@ -323,6 +346,9 @@ body.admin-page {
 
 .admin-top-actions {
   margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .admin-page .back-to-todos-btn {
@@ -507,7 +533,8 @@ button.action:disabled,
   }
 
   #todoForm,
-  #todoRequestForm {
+  #todoRequestForm,
+  #teamTodoForm {
     grid-template-columns: 1fr;
   }
 }

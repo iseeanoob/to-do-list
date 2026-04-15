@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Claim Team Todos | Node Docker App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="todos-page">
+  <div class="container">
+    <h1>🙋 Claim Team Todos</h1>
+    <div class="admin-top-actions">
+      <button type="button" id="backToTodosBtn" class="back-to-todos-btn">⬅ Back to My Todos</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Todo</th>
+          <th>Difficulty</th>
+          <th>Status</th>
+          <th>Posted By</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="claimTeamTodoTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    const backToTodosBtn = document.getElementById("backToTodosBtn");
+    const claimTeamTodoTable = document.getElementById("claimTeamTodoTable");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    if (!token) window.location.href = "login.html";
+    backToTodosBtn.addEventListener("click", () => {
+      window.location.href = "todos.html";
+    });
+
+    async function fetchTeamTodos() {
+      try {
+        const res = await fetch("/team-todos", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data.error || "Failed to load team todos.");
+        renderTeamTodos(data);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function renderTeamTodos(items) {
+      claimTeamTodoTable.innerHTML = "";
+      if (!items.length) {
+        claimTeamTodoTable.innerHTML = `<tr><td colspan="5"><em>No team todos posted yet.</em></td></tr>`;
+        return;
+      }
+      items.forEach((item) => {
+        const todoText = item.description
+          ? `${escapeHtml(item.title)} — ${escapeHtml(item.description)}`
+          : escapeHtml(item.title);
+        const statusText = item.status === "claimed"
+          ? `claimed by ${escapeHtml(item.claimed_by_username || "someone")}`
+          : "open";
+        const actionHtml = item.status === "open"
+          ? `<button class="action assign" data-action="claim" data-team-todo-id="${item.id}">Claim</button>`
+          : "<em>Unavailable</em>";
+        claimTeamTodoTable.innerHTML += `
+          <tr>
+            <td>${todoText}</td>
+            <td>${escapeHtml(item.difficulty || "easy")}</td>
+            <td>${statusText}</td>
+            <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
+            <td>${actionHtml}</td>
+          </tr>
+        `;
+      });
+    }
+
+    async function claimTeamTodo(teamTodoId) {
+      if (!confirm("Claim this team todo and add it to your todos?")) return;
+      try {
+        const res = await fetch(`/team-todos/${teamTodoId}/claim`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to claim team todo.");
+        alert(data.message || "Claimed.");
+        fetchTeamTodos();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    claimTeamTodoTable.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action='claim']");
+      if (!button) return;
+      const teamTodoId = Number(button.dataset.teamTodoId);
+      if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+      claimTeamTodo(teamTodoId);
+    });
+
+    fetchTeamTodos();
+  </script>
+  <script src="profile-menu.js"></script>
+</body>
+</html>
