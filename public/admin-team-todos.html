@@ -165,7 +165,7 @@
             renderTeamMembersCell(teamTodoId, members);
           } catch (err) {
             const host = document.getElementById(`teamMembersCell-${teamTodoId}`);
-            if (host) host.innerHTML = `<em>${escapeHtml(err.message)}</em>`;
+            if (host) host.innerHTML = "<em>Failed to load team members.</em>";
           }
         })
       );

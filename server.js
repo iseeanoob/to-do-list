@@ -460,7 +460,7 @@ function applyXpProgression(currentXp, currentLevel, gainedXp) {
 
 /**
  * Awards XP to unique user IDs using todo difficulty XP values.
- * Returns xpPerUser and per-user progression summaries.
+ * @returns {{ xpPerUser: number, rewards: Array<{ userId: number, xpGained: number, xp: number, level: number }> }}
  */
 async function awardXpToUsers(conn, userIds, difficulty) {
   const normalizedDifficulty = normalizeDifficulty(difficulty) || "easy";
