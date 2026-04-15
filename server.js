@@ -458,6 +458,42 @@ function applyXpProgression(currentXp, currentLevel, gainedXp) {
   return { xp, level };
 }
 
+async function awardXpToUsers(conn, userIds, difficulty) {
+  const normalizedDifficulty = normalizeDifficulty(difficulty) || "easy";
+  const xpPerUser = TODO_DIFFICULTY_XP[normalizedDifficulty];
+  const uniqueUserIds = Array.from(
+    new Set(
+      (Array.isArray(userIds) ? userIds : [])
+        .map((id) => Number.parseInt(id, 10))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  );
+  if (!uniqueUserIds.length) {
+    return { xpPerUser, rewards: [] };
+  }
+
+  const [users] = await conn.query(
+    "SELECT id, xp, level FROM users WHERE id IN (?) FOR UPDATE",
+    [uniqueUserIds]
+  );
+  const rewards = [];
+  for (const user of users) {
+    const progression = applyXpProgression(user.xp, user.level, xpPerUser);
+    await conn.query("UPDATE users SET xp = ?, level = ? WHERE id = ?", [
+      progression.xp,
+      progression.level,
+      user.id,
+    ]);
+    rewards.push({
+      userId: user.id,
+      xpGained: xpPerUser,
+      xp: progression.xp,
+      level: progression.level,
+    });
+  }
+  return { xpPerUser, rewards };
+}
+
 function canAssignTodo(assignerRole, targetRole) {
   if (assignerRole === 5) return targetRole <= 5;
   if (assignerRole === 4) return targetRole <= 4;
@@ -1417,6 +1453,148 @@ const userRateLimit = rateLimit({
     }
   });
 
+  app.post("/admin/team-todos/:id/members", adminRateLimit, requireRank(4), async (req, res) => {
+    const teamTodoId = Number.parseInt(req.params.id, 10);
+    const targetUserId = Number.parseInt(req.body?.userId, 10);
+    if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) {
+      return res.status(400).json({ error: "Invalid team todo id." });
+    }
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: "Valid userId is required." });
+    }
+
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [todoRows] = await conn.query(
+          `SELECT id, status
+           FROM team_todos
+           WHERE id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [teamTodoId]
+        );
+        if (todoRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Team todo not found." });
+        }
+        if (String(todoRows[0].status || "") === "completed") {
+          await conn.rollback();
+          return res.status(400).json({ error: "Cannot modify members of a completed team todo." });
+        }
+
+        const [userRows] = await conn.query("SELECT id FROM users WHERE id = ? LIMIT 1", [targetUserId]);
+        if (userRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "User not found." });
+        }
+
+        const [existingMember] = await conn.query(
+          "SELECT 1 FROM team_todo_members WHERE team_todo_id = ? AND user_id = ? LIMIT 1",
+          [teamTodoId, targetUserId]
+        );
+        if (existingMember.length > 0) {
+          await conn.rollback();
+          return res.status(400).json({ error: "User is already on this team todo." });
+        }
+
+        await conn.query(
+          "INSERT INTO team_todo_members (team_todo_id, user_id, joined_by_user_id) VALUES (?, ?, ?)",
+          [teamTodoId, targetUserId, req.user.id]
+        );
+        await conn.query(
+          `UPDATE team_todos
+           SET status = 'claimed',
+               claimed_by_user_id = COALESCE(claimed_by_user_id, ?),
+               claimed_at = COALESCE(claimed_at, NOW())
+           WHERE id = ?`,
+          [targetUserId, teamTodoId]
+        );
+        await conn.commit();
+        return res.json({ message: "User added to team todo." });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error adding user to team todo." });
+    }
+  });
+
+  app.delete("/admin/team-todos/:id/members/:userId", adminRateLimit, requireRank(4), async (req, res) => {
+    const teamTodoId = Number.parseInt(req.params.id, 10);
+    const targetUserId = Number.parseInt(req.params.userId, 10);
+    if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) {
+      return res.status(400).json({ error: "Invalid team todo id." });
+    }
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: "Invalid user id." });
+    }
+
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [todoRows] = await conn.query(
+          `SELECT id, status
+           FROM team_todos
+           WHERE id = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [teamTodoId]
+        );
+        if (todoRows.length === 0) {
+          await conn.rollback();
+          return res.status(404).json({ error: "Team todo not found." });
+        }
+        if (String(todoRows[0].status || "") === "completed") {
+          await conn.rollback();
+          return res.status(400).json({ error: "Cannot modify members of a completed team todo." });
+        }
+
+        const [removeResult] = await conn.query(
+          "DELETE FROM team_todo_members WHERE team_todo_id = ? AND user_id = ?",
+          [teamTodoId, targetUserId]
+        );
+        if (!removeResult.affectedRows) {
+          await conn.rollback();
+          return res.status(404).json({ error: "User is not a member of this team todo." });
+        }
+
+        const [memberCountRows] = await conn.query(
+          "SELECT COUNT(*) AS memberCount FROM team_todo_members WHERE team_todo_id = ?",
+          [teamTodoId]
+        );
+        const memberCount = Number(memberCountRows[0]?.memberCount || 0);
+        if (memberCount === 0) {
+          await conn.query(
+            `UPDATE team_todos
+             SET status = 'open',
+                 claimed_by_user_id = NULL,
+                 claimed_at = NULL
+             WHERE id = ?`,
+            [teamTodoId]
+          );
+        }
+
+        await conn.commit();
+        return res.json({ message: "User removed from team todo." });
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error removing user from team todo." });
+    }
+  });
+
   const joinTeamTodoHandler = async (req, res) => {
     const teamTodoId = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) {
@@ -1507,7 +1685,7 @@ const userRateLimit = rateLimit({
       try {
         await conn.beginTransaction();
         const [rows] = await conn.query(
-          `SELECT id, status
+          `SELECT id, status, difficulty
            FROM team_todos
            WHERE id = ?
            LIMIT 1
@@ -1542,8 +1720,24 @@ const userRateLimit = rateLimit({
            WHERE id = ?`,
           [req.user.id, completionNotes || null, teamTodoId]
         );
+        const [memberRowsForReward] = await conn.query(
+          "SELECT user_id FROM team_todo_members WHERE team_todo_id = ?",
+          [teamTodoId]
+        );
+        const rewardUserIds = memberRowsForReward.map((row) => row.user_id);
+        const rewardResult = await awardXpToUsers(conn, rewardUserIds, teamTodo.difficulty);
         await conn.commit();
-        return res.json({ message: "Team todo completed." });
+        const rewardedCount = rewardResult.rewards.length;
+        const totalXpGained = rewardResult.xpPerUser * rewardedCount;
+        return res.json({
+          message: rewardedCount > 0
+            ? `Team todo completed. ${rewardResult.xpPerUser} XP awarded to ${rewardedCount} team member(s).`
+            : "Team todo completed.",
+          xpPerUser: rewardResult.xpPerUser,
+          rewardedCount,
+          totalXpGained,
+          rewards: rewardResult.rewards,
+        });
       } catch (err) {
         await conn.rollback();
         throw err;

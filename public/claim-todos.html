@@ -231,6 +231,9 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to complete team todo.");
+        if (data.message) {
+          alert(data.message);
+        }
         await fetchTeamTodos();
         await selectTeamTodo(teamTodoId);
       } catch (err) {

@@ -36,6 +36,7 @@
           <th>Messages</th>
           <th>Created By</th>
           <th>Progress</th>
+          <th>Team Members</th>
         </tr>
       </thead>
       <tbody id="teamTodoTable"></tbody>
@@ -46,7 +47,7 @@
     const token = localStorage.getItem("token");
     const MIN_ADMIN_ROLE_LEVEL = 4;
     const TODO_DIFFICULTIES = ["easy", "medium", "hard", "insane"];
-    const TEAM_TODO_COLUMN_COUNT = 7;
+    const TEAM_TODO_COLUMN_COUNT = 8;
     const backToAdminBtn = document.getElementById("backToAdminBtn");
     const openClaimPageBtn = document.getElementById("openClaimPageBtn");
     const teamTodoForm = document.getElementById("teamTodoForm");
@@ -55,6 +56,7 @@
     const teamTodoDifficultyInput = document.getElementById("teamTodoDifficultyInput");
     const teamTodoMaxTeamSizeInput = document.getElementById("teamTodoMaxTeamSizeInput");
     const teamTodoTable = document.getElementById("teamTodoTable");
+    let adminUsers = [];
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -84,6 +86,131 @@
       window.location.href = "claim-todos.html";
     });
 
+    function buildUserOptionsHtml(selectedUserId = "") {
+      if (!adminUsers.length) return `<option value="">No users available</option>`;
+      return [
+        `<option value="">Select user</option>`,
+        ...adminUsers.map((user) => {
+          const selected = Number(selectedUserId) === Number(user.id) ? " selected" : "";
+          return `<option value="${Number(user.id)}"${selected}>${escapeHtml(user.username)} (#${Number(user.id)})</option>`;
+        })
+      ].join("");
+    }
+
+    async function fetchAdminUsers() {
+      const res = await fetch("/admin/users-todos", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load users.");
+      adminUsers = Array.isArray(data)
+        ? data
+            .map((item) => ({
+              id: Number(item.id),
+              username: String(item.username || "Unknown")
+            }))
+            .filter((item) => Number.isInteger(item.id) && item.id > 0)
+        : [];
+    }
+
+    async function fetchTeamMembers(teamTodoId) {
+      const res = await fetch(`/team-todos/${teamTodoId}/members`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load team members.");
+      return Array.isArray(data) ? data : [];
+    }
+
+    function renderTeamMembersCell(teamTodoId, members) {
+      const host = document.getElementById(`teamMembersCell-${teamTodoId}`);
+      if (!host) return;
+      const membersHtml = members.length
+        ? members.map((member) => `
+            <div class="team-member-row">
+              <span>${escapeHtml(member.username || "Unknown")} (#${Number(member.user_id)})</span>
+              <button
+                type="button"
+                class="action delete"
+                data-action="remove-member"
+                data-team-todo-id="${Number(teamTodoId)}"
+                data-user-id="${Number(member.user_id)}"
+              >Remove</button>
+            </div>
+          `).join("")
+        : "<em>No members yet.</em>";
+      host.innerHTML = `
+        <div class="team-member-admin-list">${membersHtml}</div>
+        <div class="team-member-admin-controls">
+          <select class="team-member-user-select" data-team-todo-id="${Number(teamTodoId)}">
+            ${buildUserOptionsHtml()}
+          </select>
+          <button
+            type="button"
+            class="action assign"
+            data-action="add-member"
+            data-team-todo-id="${Number(teamTodoId)}"
+          >Add user</button>
+        </div>
+      `;
+    }
+
+    async function hydrateAllTeamMembers(items) {
+      await Promise.all(
+        items.map(async (item) => {
+          const teamTodoId = Number(item.id);
+          if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+          try {
+            const members = await fetchTeamMembers(teamTodoId);
+            renderTeamMembersCell(teamTodoId, members);
+          } catch (err) {
+            const host = document.getElementById(`teamMembersCell-${teamTodoId}`);
+            if (host) host.innerHTML = `<em>${escapeHtml(err.message)}</em>`;
+          }
+        })
+      );
+    }
+
+    async function addMemberToTeamTodo(teamTodoId) {
+      const select = teamTodoTable.querySelector(`select.team-member-user-select[data-team-todo-id="${teamTodoId}"]`);
+      if (!select) return;
+      const userId = Number.parseInt(select.value, 10);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        alert("Select a valid user first.");
+        return;
+      }
+      try {
+        const res = await fetch(`/admin/team-todos/${teamTodoId}/members`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to add member.");
+        await fetchTeamTodos();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function removeMemberFromTeamTodo(teamTodoId, userId) {
+      if (!confirm("Remove this user from the team todo?")) return;
+      try {
+        const res = await fetch(`/admin/team-todos/${teamTodoId}/members/${userId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to remove member.");
+        await fetchTeamTodos();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
     async function fetchTeamTodos() {
       try {
         const res = await fetch("/admin/team-todos", {
@@ -92,6 +219,7 @@
         const data = await res.json().catch(() => []);
         if (!res.ok) throw new Error(data.error || "Failed to load team todos.");
         renderTeamTodos(data);
+        await hydrateAllTeamMembers(data);
       } catch (err) {
         alert(err.message);
       }
@@ -132,6 +260,7 @@
             <td>${Number(item.message_count || 0)}</td>
             <td>${escapeHtml(item.created_by_username || "Unknown")}</td>
             <td>${progressText}</td>
+            <td id="teamMembersCell-${Number(item.id)}"><em>Loading team members...</em></td>
           </tr>
         `;
       });
@@ -173,7 +302,32 @@
       }
     });
 
-    fetchTeamTodos();
+    teamTodoTable.addEventListener("click", (event) => {
+      const addButton = event.target.closest("button[data-action='add-member']");
+      if (addButton) {
+        const teamTodoId = Number(addButton.dataset.teamTodoId);
+        if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+        addMemberToTeamTodo(teamTodoId);
+        return;
+      }
+      const removeButton = event.target.closest("button[data-action='remove-member']");
+      if (removeButton) {
+        const teamTodoId = Number(removeButton.dataset.teamTodoId);
+        const userId = Number(removeButton.dataset.userId);
+        if (!Number.isInteger(teamTodoId) || teamTodoId <= 0) return;
+        if (!Number.isInteger(userId) || userId <= 0) return;
+        removeMemberFromTeamTodo(teamTodoId, userId);
+      }
+    });
+
+    (async () => {
+      try {
+        await fetchAdminUsers();
+        await fetchTeamTodos();
+      } catch (err) {
+        alert(err.message);
+      }
+    })();
   </script>
   <script src="profile-menu.js"></script>
 </body>
