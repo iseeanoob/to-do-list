@@ -200,7 +200,7 @@ function registerRoutes(app, deps) {
         "INSERT INTO todos (user_id, title, difficulty, assigned_by_user_id, assigned_by_role) VALUES (?, ?, ?, ?, ?)",
         [req.user.id, title, difficulty, req.user.id, req.user.role]
       );
-       res.json({
+      res.json({
         id: result.insertId,
         title,
         completed: TODO_DEFAULT_COMPLETED,
