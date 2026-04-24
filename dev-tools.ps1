@@ -128,9 +128,9 @@ do {
             docker pull $fullName
 
             Write-Host "Running container from pulled image..." -ForegroundColor Yellow
-            docker run -d --name app --network my-network -p 3000:3000 $fullName
+            docker run -d --name app --network my-network -p 3001:3001 $fullName
 
-            Write-Host "Container running as app on port 3000" -ForegroundColor Green
+            Write-Host "Container running as app on port 3001" -ForegroundColor Green
         }
 
         "23" {

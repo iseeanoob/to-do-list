@@ -5,14 +5,14 @@ services:
       dockerfile: Dockerfile
     container_name: todo-app
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
       DB_HOST: db
       DB_USER: iseeanoob
       DB_PASSWORD: pass
       DB_NAME: mydb
       JWT_SECRET: your_jwt_secret
-      PORT: 3000
+      PORT: 3001
     depends_on:
       db:
         condition: service_healthy
