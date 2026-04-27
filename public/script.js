@@ -1,4 +1,4 @@
-const api = "http://localhost:3001";
+const api = "";
 
 // REGISTER
 if (document.getElementById("registerForm")) {
