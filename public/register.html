@@ -40,12 +40,12 @@
       }
 
       try {
-        let url = "http://localhost:3001/register";
+        let url = "/register";
         let body = { username, email, password };
 
         // If secret is provided, hit the superadmin route
         if (secret) {
-          url = "http://localhost:3001/create-superadmin";
+          url = "/create-superadmin";
           body.secret = secret;
         }
 
