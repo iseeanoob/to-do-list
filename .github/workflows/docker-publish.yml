@@ -26,10 +26,10 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
-            --file Dockerfile \
+            --file app/Dockerfile \
             --tag node-docker-dev \
             --cache-from node-docker-dev \
-            .
+            ./app
 
       # 4. Tag Docker image for Docker Hub
       - name: Tag Docker image

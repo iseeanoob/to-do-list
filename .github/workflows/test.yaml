@@ -11,4 +11,6 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
+        working-directory: app
       - run: npm test
+        working-directory: app
