@@ -146,8 +146,8 @@ resource "kubernetes_deployment_v1" "todo_app" {
       spec {
         container {
           name  = "todo-app"
-          image = "todo-app:latest"  # built locally
-          image_pull_policy = "IfNotPresent"
+          image = "iseeanoob/todo-app:latest"
+          image_pull_policy = "Always"
 
           port {
             container_port = 3001
