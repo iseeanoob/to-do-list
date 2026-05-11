@@ -27,24 +27,24 @@ jobs:
         run: |
           docker build \
             --file app/Dockerfile \
-            --tag node-docker-dev \
-            --cache-from node-docker-dev \
+            --tag todo-app \
+            --cache-from todo-app \
             ./app
 
       # 4. Tag Docker image for Docker Hub
       - name: Tag Docker image
         run: |
-          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/node-docker-app
-          docker tag node-docker-dev $IMAGE_NAME:latest
+          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/todo-app
+          docker tag todo-app $IMAGE_NAME:latest
           # Optional: tag with branch name
           if [ "${{ github.ref_name }}" != "main" ]; then
-            docker tag node-docker-dev $IMAGE_NAME:${{ github.ref_name }}
+            docker tag todo-app $IMAGE_NAME:${{ github.ref_name }}
           fi
 
       # 5. Push Docker image to Docker Hub
       - name: Push Docker image
         run: |
-          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/node-docker-app
+          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/todo-app
           docker push $IMAGE_NAME:latest
           # Optional: push branch tag
           if [ "${{ github.ref_name }}" != "main" ]; then
