@@ -199,6 +199,7 @@ resource "kubernetes_service_v1" "todo_app_service" {
     port {
       port        = 80
       target_port = 3001
+      node_port   = 30080
     }
 
     type = "NodePort"
