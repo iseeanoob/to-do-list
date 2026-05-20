@@ -218,9 +218,9 @@ locals {
   flux_manifest_documents = {
     for name, raw_file_content in local.flux_manifest_files :
     name => [
-      for yaml_document in split("\n---\n", trimprefix(replace(raw_file_content, "\r\n", "\n"), "---\n")) :
+      for yaml_document in split("\n---\n", "\n${replace(raw_file_content, "\r\n", "\n")}") :
       trimspace(yaml_document)
-      if trimspace(yaml_document) != ""
+      if trimspace(replace(yaml_document, "/(?m)^\\s*#.*$/", "")) != ""
     ]
   }
 
@@ -235,20 +235,20 @@ locals {
   ]
 
   flux_sync_manifests_overridden = [
-    for manifest in local.flux_sync_manifests : (
-      manifest.kind == "GitRepository" ? merge(manifest, {
+    for manifest in local.flux_sync_manifests : jsondecode(
+      manifest.kind == "GitRepository" ? jsonencode(merge(manifest, {
         spec = merge(manifest.spec, {
           url = var.flux_git_repository_url
           ref = merge(try(manifest.spec.ref, {}), {
             branch = var.flux_git_branch
           })
         })
-      }) : (
-        manifest.kind == "Kustomization" ? merge(manifest, {
+      })) : (
+        manifest.kind == "Kustomization" ? jsonencode(merge(manifest, {
           spec = merge(manifest.spec, {
             path = "./${local.flux_cluster_relative_path}"
           })
-        }) : manifest
+        })) : jsonencode(manifest)
       )
     )
   ]
