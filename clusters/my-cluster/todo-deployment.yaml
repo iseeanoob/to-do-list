@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-app
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: todo-app
+  template:
+    metadata:
+      labels:
+        app: todo-app
+    spec:
+      containers:
+      - name: todo-app
+        # --- VIKTIG: Flux endrer tagen på linjen under automatisk basert på kommentaren! ---
+        image: iseeanoob/to-do-list:v1.0.0 # {"$imagepolicy": "flux-system:todo-policy"}
+        ports:
+        - containerPort: 80

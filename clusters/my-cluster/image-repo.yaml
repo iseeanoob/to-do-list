@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: todo-repo
+  namespace: flux-system
+spec:
+  image: iseeanoob/to-do-list  # Bytt til ditt Docker-brukernavn
+  interval: 1m
