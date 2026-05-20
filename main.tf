@@ -205,3 +205,66 @@ resource "kubernetes_service_v1" "todo_app_service" {
     type = "NodePort"
   }
 }
+
+locals {
+  flux_components_documents = [
+    for doc in split("\n---", file("${path.module}/clusters/my-cluster/flux-system/gotk-components.yaml")) :
+    trimspace(trimprefix(doc, "---"))
+    if trimspace(trimprefix(doc, "---")) != ""
+  ]
+
+  flux_components_manifests = [
+    for doc in local.flux_components_documents :
+    yamldecode(doc)
+  ]
+
+  flux_sync_documents = [
+    for doc in split("\n---", file("${path.module}/clusters/my-cluster/flux-system/gotk-sync.yaml")) :
+    trimspace(trimprefix(doc, "---"))
+    if trimspace(trimprefix(doc, "---")) != ""
+  ]
+
+  flux_sync_manifests = [
+    for doc in local.flux_sync_documents :
+    yamldecode(doc)
+  ]
+
+  flux_sync_manifests_overridden = [
+    for manifest in local.flux_sync_manifests : (
+      manifest.kind == "GitRepository" ? merge(manifest, {
+        spec = merge(manifest.spec, {
+          url = var.flux_git_repository_url
+          ref = merge(try(manifest.spec.ref, {}), {
+            branch = var.flux_git_branch
+          })
+        })
+      }) : (
+        manifest.kind == "Kustomization" ? merge(manifest, {
+          spec = merge(manifest.spec, {
+            path = var.flux_kustomization_path
+          })
+        }) : manifest
+      )
+    )
+  ]
+}
+
+resource "kubernetes_manifest" "flux_components" {
+  for_each = {
+    for index, manifest in local.flux_components_manifests :
+    format("%05d-%s-%s-%s", index, lower(manifest.kind), lower(manifest.metadata.name), lower(try(manifest.metadata.namespace, "cluster"))) => manifest
+  }
+
+  manifest = each.value
+}
+
+resource "kubernetes_manifest" "flux_sync" {
+  for_each = {
+    for index, manifest in local.flux_sync_manifests_overridden :
+    format("%05d-%s-%s-%s", index, lower(manifest.kind), lower(manifest.metadata.name), lower(try(manifest.metadata.namespace, "cluster"))) => manifest
+  }
+
+  manifest = each.value
+
+  depends_on = [kubernetes_manifest.flux_components]
+}
