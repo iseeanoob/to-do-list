@@ -207,27 +207,30 @@ resource "kubernetes_service_v1" "todo_app_service" {
 }
 
 locals {
-  flux_cluster_directory = "${path.module}/${var.flux_cluster_path}"
+  flux_cluster_relative_path = trimprefix(var.flux_cluster_path, "./")
+  flux_cluster_directory     = "${path.module}/${local.flux_cluster_relative_path}"
 
-  flux_components_documents = [
-    for doc in split("\n---", file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml")) :
-    trimspace(trimprefix(doc, "---"))
-    if trimspace(trimprefix(doc, "---")) != ""
-  ]
+  flux_manifest_files = {
+    components = file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml")
+    sync       = file("${local.flux_cluster_directory}/flux-system/gotk-sync.yaml")
+  }
 
-  flux_components_manifests = [
-    for doc in local.flux_components_documents :
+  flux_manifest_documents = {
+    for name, raw_file_content in local.flux_manifest_files :
+    name => [
+      for yaml_document in split("\n---\n", trimprefix(replace(raw_file_content, "\r\n", "\n"), "---\n")) :
+      trimspace(yaml_document)
+      if trimspace(yaml_document) != ""
+    ]
+  }
+
+  flux_sync_manifests = [
+    for doc in local.flux_manifest_documents.sync :
     yamldecode(doc)
   ]
 
-  flux_sync_documents = [
-    for doc in split("\n---", file("${local.flux_cluster_directory}/flux-system/gotk-sync.yaml")) :
-    trimspace(trimprefix(doc, "---"))
-    if trimspace(trimprefix(doc, "---")) != ""
-  ]
-
-  flux_sync_manifests = [
-    for doc in local.flux_sync_documents :
+  flux_components_manifests = [
+    for doc in local.flux_manifest_documents.components :
     yamldecode(doc)
   ]
 
@@ -243,7 +246,7 @@ locals {
       }) : (
         manifest.kind == "Kustomization" ? merge(manifest, {
           spec = merge(manifest.spec, {
-            path = var.flux_kustomization_path
+            path = "./${local.flux_cluster_relative_path}"
           })
         }) : manifest
       )

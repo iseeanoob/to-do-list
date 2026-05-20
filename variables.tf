@@ -21,9 +21,3 @@ variable "flux_cluster_path" {
   type        = string
   default     = "clusters/my-cluster"
 }
-
-variable "flux_kustomization_path" {
-  description = "Repository path used by Flux Kustomization."
-  type        = string
-  default     = "./clusters/my-cluster"
-}
