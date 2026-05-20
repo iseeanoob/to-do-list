@@ -12,6 +12,10 @@ spec:
     checkout:
       ref:
         branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: 'chore: update image to {{filter .Updated.Images "todo-repo"}}'
   update:
-    strategy: SetImage
-    path: ./clusters/my-cluster
+    strategy: Setters
