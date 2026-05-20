@@ -229,9 +229,40 @@ locals {
     yamldecode(doc)
   ]
 
-  flux_components_manifests = [
+  flux_components_manifests_raw = [
     for doc in local.flux_manifest_documents.components :
     yamldecode(doc)
+  ]
+
+  flux_components_manifests = [
+    for manifest in local.flux_components_manifests_raw : jsondecode(
+      manifest.kind == "Deployment" ? jsonencode(merge(manifest, {
+        spec = merge(manifest.spec, {
+          template = merge(manifest.spec.template, {
+            spec = merge(manifest.spec.template.spec, {
+              containers = [
+                for container in try(manifest.spec.template.spec.containers, []) : merge(container,
+                  try(container.resources.limits.cpu, null) == "1000m" ? {
+                    resources = merge(try(container.resources, {}), {
+                      limits = merge(try(container.resources.limits, {}), {
+                        cpu = "1"
+                      })
+                    })
+                } : {})
+              ]
+            })
+          })
+        })
+      })) : (
+        manifest.kind == "ResourceQuota" && try(manifest.spec.hard.pods, null) == "1000" ? jsonencode(merge(manifest, {
+          spec = merge(manifest.spec, {
+            hard = merge(try(manifest.spec.hard, {}), {
+              pods = "1k"
+            })
+          })
+        })) : jsonencode(manifest)
+      )
+    )
   ]
 
   flux_sync_manifests_overridden = [
