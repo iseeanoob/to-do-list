@@ -211,7 +211,7 @@ locals {
   flux_cluster_directory     = "${path.module}/${local.flux_cluster_relative_path}"
 
   flux_manifest_files = {
-    components = file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml")
+    components = replace(replace(file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml"), "1000m", "1"), "pods: \"1000\"", "pods: \"1k\"")
     sync       = file("${local.flux_cluster_directory}/flux-system/gotk-sync.yaml")
   }
 
