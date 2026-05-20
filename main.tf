@@ -207,8 +207,10 @@ resource "kubernetes_service_v1" "todo_app_service" {
 }
 
 locals {
+  flux_cluster_directory = "${path.module}/${var.flux_cluster_path}"
+
   flux_components_documents = [
-    for doc in split("\n---", file("${path.module}/clusters/my-cluster/flux-system/gotk-components.yaml")) :
+    for doc in split("\n---", file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml")) :
     trimspace(trimprefix(doc, "---"))
     if trimspace(trimprefix(doc, "---")) != ""
   ]
@@ -219,7 +221,7 @@ locals {
   ]
 
   flux_sync_documents = [
-    for doc in split("\n---", file("${path.module}/clusters/my-cluster/flux-system/gotk-sync.yaml")) :
+    for doc in split("\n---", file("${local.flux_cluster_directory}/flux-system/gotk-sync.yaml")) :
     trimspace(trimprefix(doc, "---"))
     if trimspace(trimprefix(doc, "---")) != ""
   ]

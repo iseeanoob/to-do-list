@@ -16,6 +16,12 @@ variable "flux_git_branch" {
   default     = "main"
 }
 
+variable "flux_cluster_path" {
+  description = "Repository path (without leading ./) where cluster Flux manifests are stored."
+  type        = string
+  default     = "clusters/my-cluster"
+}
+
 variable "flux_kustomization_path" {
   description = "Repository path used by Flux Kustomization."
   type        = string
