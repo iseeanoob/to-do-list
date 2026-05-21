@@ -14,7 +14,7 @@ on:
 
 jobs:
   build-and-push:
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: update image') }}
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: update image')"
     runs-on: ubuntu-latest
     permissions:
       contents: write # Needed to push the new git tag
