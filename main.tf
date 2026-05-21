@@ -230,4 +230,8 @@ locals {
 
 resource "flux_bootstrap_git" "flux_system" {
   path = local.flux_cluster_relative_path
+  components_extra = [
+    "image-reflector-controller",
+    "image-automation-controller"
+  ]
 }
