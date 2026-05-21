@@ -21,3 +21,16 @@ variable "flux_cluster_path" {
   type        = string
   default     = "clusters/my-cluster"
 }
+
+variable "flux_git_http_username" {
+  description = "HTTP basic auth username for Flux Git access."
+  type        = string
+  default     = ""
+}
+
+variable "flux_git_http_password" {
+  description = "HTTP basic auth password or token for Flux Git access."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

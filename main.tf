@@ -1,5 +1,9 @@
 terraform {
   required_providers {
+    flux = {
+      source  = "fluxcd/flux"
+      version = "~> 1.2"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
@@ -7,8 +11,22 @@ terraform {
   }
 }
 
+provider "flux" {
+  kubernetes = {
+    config_path = "~/.kube/config"
+  }
+  git = {
+    url    = var.flux_git_repository_url
+    branch = var.flux_git_branch
+    http = {
+      username = var.flux_git_http_username
+      password = var.flux_git_http_password
+    }
+  }
+}
+
 provider "kubernetes" {
-  config_path    = "~/.kube/config"
+  config_path = "~/.kube/config"
 }
 
 
@@ -145,8 +163,8 @@ resource "kubernetes_deployment_v1" "todo_app" {
 
       spec {
         container {
-          name  = "todo-app"
-          image = "iseeanoob/todo-app:latest"
+          name              = "todo-app"
+          image             = "iseeanoob/todo-app:latest"
           image_pull_policy = "Always"
 
           port {
@@ -171,7 +189,7 @@ resource "kubernetes_deployment_v1" "todo_app" {
           }
           env {
             name  = "JWT_SECRET"
-            value = "your_jwt_secret"   # change this to something secure
+            value = "your_jwt_secret" # change this to something secure
           }
           env {
             name  = "PORT"
@@ -208,99 +226,8 @@ resource "kubernetes_service_v1" "todo_app_service" {
 
 locals {
   flux_cluster_relative_path = trimprefix(var.flux_cluster_path, "./")
-  flux_cluster_directory     = "${path.module}/${local.flux_cluster_relative_path}"
-
-  flux_manifest_files = {
-    components = file("${local.flux_cluster_directory}/flux-system/gotk-components.yaml")
-    sync       = file("${local.flux_cluster_directory}/flux-system/gotk-sync.yaml")
-  }
-
-  flux_manifest_documents = {
-    for name, raw_file_content in local.flux_manifest_files :
-    name => [
-      for yaml_document in split("\n---\n", "\n${replace(raw_file_content, "\r\n", "\n")}") :
-      trimspace(yaml_document)
-      if trimspace(replace(yaml_document, "/(?m)^\\s*#.*$/", "")) != ""
-    ]
-  }
-
-  flux_sync_manifests = [
-    for doc in local.flux_manifest_documents.sync :
-    yamldecode(doc)
-  ]
-
-  flux_components_manifests_raw = [
-    for doc in local.flux_manifest_documents.components :
-    yamldecode(doc)
-  ]
-
-  flux_components_manifests = [
-    for manifest in local.flux_components_manifests_raw : jsondecode(
-      manifest.kind == "Deployment" ? jsonencode(merge(manifest, {
-        spec = merge(manifest.spec, {
-          template = merge(manifest.spec.template, {
-            spec = merge(manifest.spec.template.spec, {
-              containers = [
-                for container in try(manifest.spec.template.spec.containers, []) : merge(container,
-                  try(container.resources.limits.cpu, null) == "1000m" ? {
-                    resources = merge(try(container.resources, {}), {
-                      limits = merge(try(container.resources.limits, {}), {
-                        cpu = "1"
-                      })
-                    })
-                } : {})
-              ]
-            })
-          })
-        })
-      })) : (
-        manifest.kind == "ResourceQuota" && try(manifest.spec.hard.pods, null) == "1000" ? jsonencode(merge(manifest, {
-          spec = merge(manifest.spec, {
-            hard = merge(try(manifest.spec.hard, {}), {
-              pods = "1k"
-            })
-          })
-        })) : jsonencode(manifest)
-      )
-    )
-  ]
-
-  flux_sync_manifests_overridden = [
-    for manifest in local.flux_sync_manifests : jsondecode(
-      manifest.kind == "GitRepository" ? jsonencode(merge(manifest, {
-        spec = merge(manifest.spec, {
-          url = var.flux_git_repository_url
-          ref = merge(try(manifest.spec.ref, {}), {
-            branch = var.flux_git_branch
-          })
-        })
-      })) : (
-        manifest.kind == "Kustomization" ? jsonencode(merge(manifest, {
-          spec = merge(manifest.spec, {
-            path = "./${local.flux_cluster_relative_path}"
-          })
-        })) : jsonencode(manifest)
-      )
-    )
-  ]
 }
 
-resource "kubernetes_manifest" "flux_components" {
-  for_each = {
-    for index, manifest in local.flux_components_manifests :
-    format("%05d-%s-%s-%s", index, lower(manifest.kind), lower(manifest.metadata.name), lower(try(manifest.metadata.namespace, "cluster"))) => manifest
-  }
-
-  manifest = each.value
-}
-
-resource "kubernetes_manifest" "flux_sync" {
-  for_each = {
-    for index, manifest in local.flux_sync_manifests_overridden :
-    format("%05d-%s-%s-%s", index, lower(manifest.kind), lower(manifest.metadata.name), lower(try(manifest.metadata.namespace, "cluster"))) => manifest
-  }
-
-  manifest = each.value
-
-  depends_on = [kubernetes_manifest.flux_components]
+resource "flux_bootstrap_git" "flux_system" {
+  path = local.flux_cluster_relative_path
 }
