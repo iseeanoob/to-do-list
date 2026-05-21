@@ -20,16 +20,3 @@ spec:
         ports:
         - containerPort: 3001
         imagePullPolicy: Always
-        env:
-        - name: DB_HOST
-          value: db
-        - name: DB_USER
-          value: iseeanoob
-        - name: DB_PASSWORD
-          value: pass
-        - name: DB_NAME
-          value: mydb
-        - name: JWT_SECRET
-          value: your_jwt_secret
-        - name: PORT
-          value: "3001"
