@@ -16,6 +16,6 @@ spec:
       containers:
       - name: todo-app
         # --- VIKTIG: Flux endrer tagen på linjen under automatisk basert på kommentaren! ---
-        image: iseeanoob/to-do-list:1.0.109 # {"$imagepolicy": "flux-system:todo-policy"}
+        image: iseeanoob/to-do-list:1.0.110 # {"$imagepolicy": "flux-system:todo-policy"}
         ports:
         - containerPort: 80
