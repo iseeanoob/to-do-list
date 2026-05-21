@@ -16,6 +16,6 @@ spec:
       author:
         email: fluxcdbot@users.noreply.github.com
         name: fluxcdbot
-      messageTemplate: 'chore: update image'
+      messageTemplate: 'chore: update image {{range $index, $image := .Updated.Images}}{{if $index}}, {{end}}{{$image}}{{end}}'
   update:
     strategy: Setters
