@@ -2,9 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: todo-app
-  namespace: default
+  namespace: todo-app
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: todo-app
@@ -18,4 +18,5 @@ spec:
         # --- VIKTIG: Flux endrer tagen på linjen under automatisk basert på kommentaren! ---
         image: iseeanoob/to-do-list:1.0.213 # {"$imagepolicy": "flux-system:todo-policy"}
         ports:
-        - containerPort: 80
+        - containerPort: 3001
+        imagePullPolicy: Always
