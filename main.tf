@@ -18,6 +18,10 @@ provider "flux" {
   git = {
     url    = var.flux_git_repository_url
     branch = var.flux_git_branch
+    http = {
+      username = var.flux_git_http_username
+      password = var.flux_git_http_password
+    }
   }
 }
 
