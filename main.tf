@@ -165,6 +165,8 @@ locals {
 }
 
 resource "flux_bootstrap_git" "flux_system" {
+  count = var.enable_flux ? 1 : 0
+
   path = local.flux_cluster_relative_path
   components_extra = [
     "image-reflector-controller",
