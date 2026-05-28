@@ -10,12 +10,6 @@ variable "flux_git_repository_url" {
   default     = "https://github.com/iseeanoob/to-do-list"
 }
 
-variable "enable_flux" {
-  description = "Whether to enable Flux bootstrap resources."
-  type        = bool
-  default     = false
-}
-
 variable "flux_git_branch" {
   description = "Git branch used by Flux GitRepository."
   type        = string
