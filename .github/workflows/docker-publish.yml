@@ -16,10 +16,10 @@ jobs:
   build-and-push:
     if: >-
       github.event_name != 'push' ||
-      (
-        github.actor != 'fluxcdbot' &&
-        github.event.head_commit.author.name != 'fluxcdbot' &&
-        !startsWith(github.event.head_commit.message, 'chore: update image')
+      !(
+        github.actor == 'fluxcdbot' ||
+        github.event.head_commit.author.name == 'fluxcdbot' ||
+        startsWith(github.event.head_commit.message, 'chore: update image')
       )
     runs-on: ubuntu-latest
     permissions:
