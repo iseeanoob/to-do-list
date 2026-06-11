@@ -1,5 +1,4 @@
-name: test and build
-
+name: Test and Build
 on: [push]
 
 jobs:
@@ -7,14 +6,12 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: app
-
+        working-directory: ./app
     steps:
-      - uses: actions/checkout@v4
-
-      - name: sett opp Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - name: Sett opp Node
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
       - run: npm install
       - run: npm test
